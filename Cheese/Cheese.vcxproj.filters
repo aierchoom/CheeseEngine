@@ -1,0 +1,135 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Core">
+      <UniqueIdentifier>{5882fa19-64ce-476f-9c46-6aeff1d9c753}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{a88d35b5-8ae6-44dd-a0b9-53f82418f5db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Graphics">
+      <UniqueIdentifier>{b5ae8ff2-3825-4759-b639-91607084ae07}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Input">
+      <UniqueIdentifier>{67aac33b-92ff-4998-b7d7-c6d3930d80bf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{6931e10e-d21a-489f-be5c-fb440ea78904}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Platform">
+      <UniqueIdentifier>{4a819b52-f5fc-4f85-b12b-078070a1e977}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Platform\Windows">
+      <UniqueIdentifier>{c04ae588-6ba4-42be-a918-734b11c4cf04}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils\Log">
+      <UniqueIdentifier>{bb8127e0-3f50-4477-a9a9-70c945204fab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils\Date">
+      <UniqueIdentifier>{cb20fcf9-19af-4fac-8003-31fa0c8146c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Model">
+      <UniqueIdentifier>{34cf285e-ed2f-4e9d-97d9-b723747bfc87}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Math">
+      <UniqueIdentifier>{bb06937e-3eef-47e0-8064-724dcaf55de9}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Source\Core\CheeseApp.cc">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Core\CheeseWindow.cc">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Graphics\D3DUtil.cc">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Graphics\IGraphics.cc">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Input\InputComponent.cc">
+      <Filter>Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Platform\Windows\WindowsBase.cc">
+      <Filter>Platform\Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Utils\GameTimer.cc">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Graphics\ShaderInfo.cc">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Utils\Log\Logger.cc">
+      <Filter>Utils\Log</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Utils\Log\ConsoleLogDevice.cc">
+      <Filter>Utils\Log</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Utils\Date\Date.cc">
+      <Filter>Utils\Date</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Core\Camera.cc">
+      <Filter>Core</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Source\Core\CheeseApp.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Core\CheeseWindow.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Core\CoreMinimal.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Core\Delegate.hpp">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Common\TypeDef.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Graphics\D3DUtil.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Graphics\IGraphics.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Graphics\ShaderInfo.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Input\InputConponent.h">
+      <Filter>Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Input\InputHelper.h">
+      <Filter>Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Utils\GameTimer.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Utils\Log\ILogDevice.h">
+      <Filter>Utils\Log</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Utils\Log\Logger.h">
+      <Filter>Utils\Log</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Utils\Log\ConsoleLogDevice.h">
+      <Filter>Utils\Log</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Utils\Date\Date.h">
+      <Filter>Utils\Date</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Model\Model.h">
+      <Filter>Model</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Core\Camera.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Model\Box.h">
+      <Filter>Model</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Math\Transform.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

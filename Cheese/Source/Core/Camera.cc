@@ -75,7 +75,7 @@ void Camera::LookAt(const DirectX::XMFLOAT3& pos, const DirectX::XMFLOAT3& targe
 void Camera::LookTo(const XMFLOAT3& pos, const XMFLOAT3& to, const XMFLOAT3& up)
 {
   mTransform.SetPosition(pos);
-  mTransform.LookAt(to, up);
+  mTransform.LookTo(to, up);
 }
 
 void Camera::MoveForward(float distance) { mTransform.Translate(mTransform.GetForwardAxis(), distance); }
@@ -92,6 +92,6 @@ void Camera::AddYaw(float radian)
 void Camera::AddPitch(float radian)
 {
   XMFLOAT3 rotation = mTransform.GetRotation();
-  rotation.x        = XMScalarModAngle(rotation.x + radian);
+  rotation.x += radian;
   mTransform.SetRotation(rotation);
 }

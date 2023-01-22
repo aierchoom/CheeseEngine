@@ -66,9 +66,11 @@ class ShaderInfo
  public:
   ShaderInfo() = default;
 
-  void Create(ID3DBlob* shaderByteCode, ID3D12Device* device);
-  void CreateRootSignature(ID3D12Device* device, uint32 cbufferSize);
-  void CreateCbvHeapDescriptor(ID3D12Device* device, uint32 descriptorNo);
+  void Generate(ID3DBlob* shaderByteCode, ID3D12Device* device);
+  void CreateConstantBuffer(ID3D12Device* device, D3D12_SHADER_INPUT_BIND_DESC bindDesc,
+                            ID3D12ShaderReflectionConstantBuffer* cbReflection);
+  void CreateRootSignature(ID3D12Device* device);
+  void CreateCbvHeapDescriptor(ID3D12Device* device);
 
   void SetFloat(const CheString& varName, float value);
   void SetFloat3(const CheString& varName, const DirectX::XMFLOAT3& value);
@@ -79,10 +81,11 @@ class ShaderInfo
   ID3D12DescriptorHeap* GetCbvHeap() const { return mCbvHeap.Get(); }
   ID3D12RootSignature* GetRootSignature() const { return mRootSignature.Get(); }
 
- public:
+  std::unordered_map<CheString, ConstantBuffer> mCBuffers;
+
+ private:
   ComPtr<ID3D12DescriptorHeap> mCbvHeap      = nullptr;
   ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
-  std::unordered_map<CheString, ConstantBuffer> mCBuffers;
 };
 
 #endif  // GRAPHICS_SHADER_REFLECT_H

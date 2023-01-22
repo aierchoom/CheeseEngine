@@ -1,6 +1,7 @@
 #include "ShaderInfo.h"
 #include <strsafe.h>
 #include "Core/CoreMinimal.h"
+#include "Utils/Log/Logger.h"
 
 using namespace std;
 
@@ -41,7 +42,7 @@ void ConstantBuffer::SetRawData(const CheString& varName, const Byte* data, uint
   }
 }
 
-void ShaderInfo::Create(ID3DBlob* shader, ID3D12Device* device)
+void ShaderInfo::Generate(ID3DBlob* shader, ID3D12Device* device)
 {
   ComPtr<ID3D12ShaderReflection> shaderReflection;
   HRESULT hr = D3DReflect(shader->GetBufferPointer(), shader->GetBufferSize(), __uuidof(ID3D12ShaderReflection),
@@ -52,11 +53,9 @@ void ShaderInfo::Create(ID3DBlob* shader, ID3D12Device* device)
   ShaderFlag shaderFlag = static_cast<ShaderFlag>(1 << D3D12_SHVER_GET_TYPE(shaderDesc.Version));
 
   if (FAILED(hr)) {
-    MessageBox(NULL, CTEXT("error"), CTEXT("error"), MB_OK);
+    logger.Error(CTEXT("Generate shader info error"));
+    TIFF(hr);
   }
-
-  CreateRootSignature(device, shaderDesc.ConstantBuffers);
-  CreateCbvHeapDescriptor(device, shaderDesc.ConstantBuffers);
 
   for (uint32 i = 0;; ++i) {
     D3D12_SHADER_INPUT_BIND_DESC shaderInputDesc;
@@ -67,76 +66,79 @@ void ShaderInfo::Create(ID3DBlob* shader, ID3D12Device* device)
 
     // Process construct buffer build.
     if (shaderInputDesc.Type == D3D_SIT_CBUFFER) {
-      ID3D12ShaderReflectionConstantBuffer* srcCBuffer = shaderReflection->GetConstantBufferByName(shaderInputDesc.Name);
-
-      // Get the varible info in the cbuffer and create the mapping.
-      D3D12_SHADER_BUFFER_DESC cbufferDescs{};
-      hr = srcCBuffer->GetDesc(&cbufferDescs);
-      if (FAILED(hr)) MessageBox(NULL, CTEXT("error"), CTEXT("error"), MB_OK);
-
-      bool isParam = !strcmp(shaderInputDesc.Name, "$Params");
-
-      if (!isParam) {
-        CheString cbufferName = ConvertToCheString(shaderInputDesc.Name);
-
-        auto iter = mCBuffers.find(cbufferName);
-
-        // If it doesn't exist, cteate it.
-        if (iter == mCBuffers.end()) {
-          mCBuffers.emplace(
-              std::make_pair(cbufferName, ConstantBuffer(cbufferName, shaderInputDesc.BindPoint, cbufferDescs.Size)));
-          mCBuffers[cbufferName].Create(device);
-
-          // Generate varible offsets
-          for (uint32 j = 0; j < cbufferDescs.Variables; ++j) {
-            ID3D12ShaderReflectionVariable* cbufferVar = srcCBuffer->GetVariableByIndex(j);
-            D3D12_SHADER_VARIABLE_DESC varibleDesc;
-            TIFF(cbufferVar->GetDesc(&varibleDesc));
-            mCBuffers[cbufferName].SetVariableOffset(ConvertToCheString(varibleDesc.Name), varibleDesc.StartOffset);
-          }
-        }
-      }
+      CreateConstantBuffer(device, shaderInputDesc, shaderReflection->GetConstantBufferByName(shaderInputDesc.Name));
+    }
+    if (shaderInputDesc.Type == D3D_SIT_SAMPLER) {
+      logger.Info(CTEXT("get a sampler"));
+    }
+    if (shaderInputDesc.Type == D3D_SIT_TEXTURE) {
+      logger.Info(CTEXT("get a texture"));
     }
   }
 }
 
-void ShaderInfo::CreateCbvHeapDescriptor(ID3D12Device* device, uint32 descriptorNo)
+void ShaderInfo::CreateConstantBuffer(ID3D12Device* device, D3D12_SHADER_INPUT_BIND_DESC bindDesc,
+                                      ID3D12ShaderReflectionConstantBuffer* cbReflection)
 {
-  if (descriptorNo == 0) {
+  // Get the varible info in the cbuffer and create the mapping.
+  D3D12_SHADER_BUFFER_DESC cbufferDescs{};
+  HRESULT hr = cbReflection->GetDesc(&cbufferDescs);
+  if (FAILED(hr)) logger.Info(CTEXT("Can't get shader info"));
+
+  CheString cbufferName = ConvertToCheString(bindDesc.Name);
+
+  auto iter = mCBuffers.find(cbufferName);
+  // If it doesn't exist, cteate it.
+  if (iter == mCBuffers.end()) {
+    mCBuffers.emplace(std::make_pair(cbufferName, ConstantBuffer(cbufferName, bindDesc.BindPoint, cbufferDescs.Size)));
+    mCBuffers[cbufferName].Create(device);
+
+    // Generate varible offsets
+    for (uint32 j = 0; j < cbufferDescs.Variables; ++j) {
+      ID3D12ShaderReflectionVariable* cbufferVar = cbReflection->GetVariableByIndex(j);
+      D3D12_SHADER_VARIABLE_DESC varibleDesc;
+      TIFF(cbufferVar->GetDesc(&varibleDesc));
+      mCBuffers[cbufferName].SetVariableOffset(ConvertToCheString(varibleDesc.Name), varibleDesc.StartOffset);
+    }
+  }
+}
+
+void ShaderInfo::CreateRootSignature(ID3D12Device* device)
+{
+  vector<CD3DX12_ROOT_PARAMETER> slotRootParameter(mCBuffers.size());
+
+  for (uint32 i = 0; i < slotRootParameter.size(); i++) {
+    slotRootParameter[i].InitAsConstantBufferView(i);
+  }
+
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(slotRootParameter.size(), slotRootParameter.data(), 0, nullptr,
+                                          D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+  ComPtr<ID3DBlob> serializedRootSig = nullptr;
+  ComPtr<ID3DBlob> errorBlob         = nullptr;
+  HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(),
+                                           errorBlob.GetAddressOf());
+
+  if (errorBlob != nullptr) {
+    ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+  }
+  TIFF(hr);
+
+  TIFF(device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(),
+                                   IID_PPV_ARGS(mRootSignature.GetAddressOf())));
+}
+
+void ShaderInfo::CreateCbvHeapDescriptor(ID3D12Device* device)
+{
+  if (mCBuffers.size() == 0) {
     return;
   }
   D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-  cbvHeapDesc.NumDescriptors = descriptorNo;
+  cbvHeapDesc.NumDescriptors = mCBuffers.size();
   cbvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
   cbvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   cbvHeapDesc.NodeMask       = 0;
   device->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
-}
-
-void ShaderInfo::CreateRootSignature(ID3D12Device* device, uint32 cbufferSize)
-{
-  // vector<CD3DX12_ROOT_PARAMETER> slotRootParamter(cbufferSize);
-  // vector<CD3DX12_DESCRIPTOR_RANGE> cbvTable(cbufferSize);
-  // for (uint32 i = 0; i < cbufferSize; i++) {
-  //   cbvTable[i].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, i);
-  //   slotRootParamter[i].InitAsDescriptorTable(1, &cbvTable[i]);
-  // }
-
-  // CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(cbufferSize, slotRootParamter.data(), 0, nullptr,
-  //                                         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-  // ComPtr<ID3DBlob> serializedRootSig = nullptr;
-  // ComPtr<ID3DBlob> errorBlob         = nullptr;
-  // HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(),
-  //                                          errorBlob.GetAddressOf());
-
-  // if (errorBlob != nullptr) {
-  //   ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-  // }
-  // TIFF(hr);
-
-  // TIFF(device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(),
-  //                                  IID_PPV_ARGS(&mRootSignature)))
 }
 
 void ShaderInfo::SetFloat(const CheString& varName, float value)

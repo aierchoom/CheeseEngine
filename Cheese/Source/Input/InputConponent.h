@@ -5,13 +5,13 @@
 
 #include <vector>
 #include <unordered_map>
+#include <memory>
 #include <windows.h>
 #include "Core/Delegate.hpp"
 
 class IEvent
 {
  public:
-  virtual void OnKeyDown(EKeyMap keyMap) {}
   virtual void OnResize(uint32 width, uint32 height) {}
 };
 
@@ -23,16 +23,29 @@ class InputComponent
 
   LRESULT Response(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
-  void RegisterOnKeyDown(IEvent& caller)
+  void Tick(float dt) {}
+
+  template <typename UserClass, typename MethodType>
+  void RegisterOnAction(EKeyMap key, EKeyStatus keyStatus, UserClass& user, MethodType method)
   {
-    auto delegate = MakeDelegate(caller, &IEvent::OnKeyDown);
-    mKeyEventMap.push_back(delegate);
+    if (keyStatus == EKeyStatus::PRESSED) {
+      mPressedMap[key].push_back(std::make_shared<ActionEventPtr<UserClass>>(user, method));
+    }
+    if (keyStatus == EKeyStatus::RELEASED) {
+      mReleasedMap[key].push_back(std::make_shared<ActionEventPtr<UserClass>>(user, method));
+    }
   }
 
-  void RegisterOnResize(IEvent& caller)
+  template <typename UserClass, typename MethodType>
+  void RegisterOnAxis(EAxisEvent event, UserClass& user, MethodType method)
   {
-    auto delegate = MakeDelegate(caller, &IEvent::OnResize);
-    mResizeEventMap.push_back(delegate);
+    mAxisEventMap[event].push_back(std::make_shared<AxisEventPtr<UserClass>>(user, method));
+  }
+
+  template <typename UserClass, typename MethodType>
+  void RegisterOnResize(UserClass& user, MethodType method)
+  {
+    mResizeEventList.push_back(std::make_shared<ResizeEventPtr<UserClass>>(user, method));
   }
 
   EKeyStatus GetKeyStatus(EKeyMap key)
@@ -46,9 +59,13 @@ class InputComponent
 
  private:
   static InputComponent* mInputComponent;
-  std::vector<Delegate<decltype(&IEvent::OnKeyDown)>> mKeyEventMap;
-  std::vector<Delegate<decltype(&IEvent::OnResize)>> mResizeEventMap;
 
+  std::unordered_map<EKeyMap, std::vector<std::shared_ptr<IActionEvent>>> mPressedMap;
+  std::unordered_map<EKeyMap, std::vector<std::shared_ptr<IActionEvent>>> mReleasedMap;
+  std::unordered_map<EAxisEvent, std::vector<std::shared_ptr<IAxisEvent>>> mAxisEventMap;
+  std::vector<std::shared_ptr<IResizeEvent>> mResizeEventList;
   std::unordered_map<EKeyMap, EKeyStatus> mKeyStatus;
+
+  MousePoint mLastPoint = {0, 0};
 };
 #endif  // INPUT_INPUT_COMPONENT_H

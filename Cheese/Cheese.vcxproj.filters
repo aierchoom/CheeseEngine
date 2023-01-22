@@ -72,6 +72,8 @@
     <ClCompile Include="Source\Core\Camera.cc">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Model\Vertex.cc" />
+    <ClCompile Include="Source\Graphics\Shader.cc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\CheeseApp.h">
@@ -131,5 +133,7 @@
     <ClInclude Include="Source\Math\Transform.h">
       <Filter>Math</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Model\Vertex.h" />
+    <ClInclude Include="Source\Graphics\Shader.h" />
   </ItemGroup>
 </Project>

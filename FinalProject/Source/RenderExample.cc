@@ -11,8 +11,10 @@
 #include <Utils/Log/Logger.h>
 #include <Input/InputConponent.h>
 #include <Graphics/IGraphics.h>
+#include <Graphics/Shader.h>
 #include <Graphics/ShaderInfo.h>
 #include <Model/Box.h>
+#include <Windows.h>
 
 using namespace DirectX;
 using namespace std;
@@ -41,13 +43,27 @@ class RenderExample : public CheeseApp, IEvent
   virtual bool Load() override;
   virtual void UnLoad() override {}
 
+  void AddPitch(float val)
+  {
+    if (mIsMovingMouse) {
+      mCamera.AddPitch(val * 0.001f);
+    }
+  }
+  void AddYaw(float val)
+  {
+    if (mIsMovingMouse) {
+      mCamera.AddYaw(val * 0.001f);
+    }
+  }
+
+  void StartMoveMouse() { mIsMovingMouse = true; }
+  void StopMoveMouse() { mIsMovingMouse = false; }
+
   virtual void Clear() override
   {
     SAFE_RELEASE_PTR(mWindow);
     SAFE_RELEASE_PTR(mGraphics);
   }
-
-  virtual void OnKeyDown(EKeyMap keyMap) override;
 
   virtual void OnResize(uint32 width, uint32 height) override;
 
@@ -56,8 +72,6 @@ class RenderExample : public CheeseApp, IEvent
   void Draw();
 
   void LoadBox();
-  void BuildRootSignture();
-  void BuildShader();
   void BuildPSO();
 
   inline CheeseWindow* GetWindow() const override { return mWindow; }
@@ -70,15 +84,10 @@ class RenderExample : public CheeseApp, IEvent
   GameTimer mTimer;
 
   CheeseWindow* mWindow;
-
   Graphics* mGraphics;
 
-  ComPtr<ID3DBlob> mVsByteCode = nullptr;
-  ShaderInfo* mVsReflect       = nullptr;
-  ComPtr<ID3DBlob> mPsByteCode = nullptr;
-  ShaderInfo* mPsReflect       = nullptr;
-
-  ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
+  Shader mBoxShader;
+  // ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
 
   ComPtr<ID3D12PipelineState> mPSO = nullptr;
 
@@ -92,26 +101,25 @@ class RenderExample : public CheeseApp, IEvent
 
   Box<VertexPosNormalTex> mBox;
   Light mLight;
+
+  bool mIsMovingMouse = false;
 };
 
 bool RenderExample::Init()
 {
+  // Register Action
+  InputComponent::Get()->RegisterOnAction(EKeyMap::MOUSE_LBUTTON, EKeyStatus::PRESSED, *this, &RenderExample::StartMoveMouse);
+  InputComponent::Get()->RegisterOnAction(EKeyMap::MOUSE_LBUTTON, EKeyStatus::RELEASED, *this, &RenderExample::StopMoveMouse);
+  InputComponent::Get()->RegisterOnAxis(EAxisEvent::MOUSE_X, *this, &RenderExample::AddYaw);
+  InputComponent::Get()->RegisterOnAxis(EAxisEvent::MOUSE_Y, *this, &RenderExample::AddPitch);
+
   // Register Event
-  InputComponent::Get()->RegisterOnKeyDown(*this);
-  InputComponent::Get()->RegisterOnResize(*this);
-  auto ic = InputComponent::Get();
+  InputComponent::Get()->RegisterOnResize(*this, &RenderExample::OnResize);
 
   // Init graphics and Reset CommandList
   mGraphics->Initialize(mWindow);
 
   return true;
-}
-
-void RenderExample::OnKeyDown(EKeyMap keyMap)
-{
-  if (keyMap == EKeyMap::KEY_W) {
-    logger.Info(CTEXT("CLICK W"));
-  }
 }
 
 void RenderExample::OnResize(uint32 width, uint32 height)
@@ -121,25 +129,30 @@ void RenderExample::OnResize(uint32 width, uint32 height)
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
   mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
 
-  mVsReflect->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), mCamera.GetViewProjMatrixXM());
+  mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), mCamera.GetViewProjMatrixXM());
 }
 
 bool RenderExample::Load()
 {
   mGraphics->ResetCommandList();
 
-  BuildRootSignture();
-  BuildShader();
+  logger.Info(CTEXT("Build Shader..."));
+  mBoxShader.AddShader(CTEXT("Shaders/color.hlsl"), ShaderType::VERTEX_SHADER);
+  mBoxShader.AddShader(CTEXT("Shaders/color.hlsl"), ShaderType::PIXEL_SHADER);
+  mBoxShader.GenerateShaderInfo(mGraphics->mD3dDevice.Get());
+  mBoxShader.GetShaderInfo()->CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mBoxShader.GetShaderInfo()->CreateCbvHeapDescriptor(mGraphics->mD3dDevice.Get());
+
   LoadBox();
   BuildPSO();
 
   mGraphics->ExecuteCommandList();
   mGraphics->FlushCommandQueue();
 
-  mCamera.SetPosition(0.0f, 0.0f, -5.0f);
+  mCamera.LookAt(XMFLOAT3(0.0f, 0.0f, -5.0f), XMFLOAT3(0.0f, 0.0f, 0.0f));
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
   mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
-  mVsReflect->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+  mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
 
   return true;
 }
@@ -173,11 +186,11 @@ void RenderExample::Draw()
   D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView   = mGraphics->DepthStencilView();
   mGraphics->mCommandList->OMSetRenderTargets(1, &currBackBufferView, true, &depthStencilView);
 
-  ID3D12DescriptorHeap* cbvHeap           = mVsReflect->GetCbvHeap();
+  ID3D12DescriptorHeap* cbvHeap           = mBoxShader.GetShaderInfo()->GetCbvHeap();
   ID3D12DescriptorHeap* descriptorHeaps[] = {cbvHeap};
   mGraphics->mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
-  mGraphics->mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+  mGraphics->mCommandList->SetGraphicsRootSignature(mBoxShader.GetShaderInfo()->GetRootSignature());
 
   D3D12_VERTEX_BUFFER_VIEW vBufferView = mBox.VertexBufferView();
   mGraphics->mCommandList->IASetVertexBuffers(0, 1, &vBufferView);
@@ -186,12 +199,11 @@ void RenderExample::Draw()
   mGraphics->mCommandList->IASetIndexBuffer(&iBufferView);
   mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  auto cbPerObject = mVsReflect->mCBuffers[CTEXT("cbPerObject")];
-  mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbPerObject.GetSlot(),
-                                                             cbPerObject.mUploadBuffer->GetGPUVirtualAddress());
-  auto cbMaterial = mPsReflect->mCBuffers[CTEXT("cbMaterial")];
-  mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbMaterial.GetSlot(),
-                                                             cbMaterial.mUploadBuffer->GetGPUVirtualAddress());
+  for (auto iter : mBoxShader.GetShaderInfo()->mCBuffers) {
+    auto cbuffer = iter.second;
+    mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbuffer.GetSlot(),
+                                                               cbuffer.mUploadBuffer->GetGPUVirtualAddress());
+  }
   mGraphics->mCommandList->DrawIndexedInstanced(static_cast<UINT>(mBox.mMesh.indexVec.size()), 1, 0, 0, 0);
 
   // Indicate a state tansition on the resource usage.
@@ -259,66 +271,27 @@ void RenderExample::Update(float dt)
   world          = XMMatrixRotationZ(sin(rotTime));
   world          = world * XMMatrixRotationY(sin(rotTime));
 
-  mVsReflect->SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
-  mVsReflect->SetMatrix(CTEXT("cbPerObject.gInvWorld"), InverseTranspose(world));
+  mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
+  mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gInvWorld"), InverseTranspose(world));
 
-  mPsReflect->SetMaterial(CTEXT("cbMaterial.gMaterial"), mBox.mMaterial);
-  mPsReflect->SetLight(CTEXT("cbMaterial.gLight"), mLight);
-  mPsReflect->SetFloat3(CTEXT("cbMaterial.gEyePosW"), mCamera.GetPostion());
+  mBoxShader.GetShaderInfo()->SetMaterial(CTEXT("cbMaterial.gMaterial"), mBox.mMaterial);
+  mBoxShader.GetShaderInfo()->SetLight(CTEXT("cbMaterial.gLight"), mLight);
+  mBoxShader.GetShaderInfo()->SetFloat3(CTEXT("cbMaterial.gEyePosW"), mCamera.GetPostion());
 
-  mVsReflect->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+  mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
 }
 
 void RenderExample::LoadBox() { mBox.CreateGPUInfo(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get()); }
-
-void RenderExample::BuildRootSignture()
-{
-  CD3DX12_ROOT_PARAMETER slotRootParameter[3];
-
-  slotRootParameter[0].InitAsConstantBufferView(0);
-  slotRootParameter[1].InitAsConstantBufferView(1);
-  slotRootParameter[2].InitAsConstantBufferView(2);
-
-  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter, 0, nullptr,
-                                          D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-  ComPtr<ID3DBlob> serializedRootSig = nullptr;
-  ComPtr<ID3DBlob> errorBlob         = nullptr;
-  HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(),
-                                           errorBlob.GetAddressOf());
-
-  if (errorBlob != nullptr) {
-    ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-  }
-  TIFF(hr);
-
-  TIFF(mGraphics->mD3dDevice->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(),
-                                                  IID_PPV_ARGS(mRootSignature.GetAddressOf())));
-}
-
-void RenderExample::BuildShader()
-{
-  HRESULT hr = S_OK;
-
-  logger.Debug(CTEXT("Build vertex shader."));
-  mVsByteCode = D3DUtil::CompileShader(CTEXT("Shaders/color.hlsl"), nullptr, CTEXT("VS"), CTEXT("vs_5_0"));
-  mVsReflect  = new ShaderInfo();
-  mVsReflect->Create(mVsByteCode.Get(), mGraphics->mD3dDevice.Get());
-
-  logger.Debug(CTEXT("Build pixel shader."));
-  mPsByteCode = D3DUtil::CompileShader(CTEXT("Shaders/color.hlsl"), nullptr, CTEXT("PS"), CTEXT("ps_5_0"));
-  mPsReflect  = new ShaderInfo();
-  mPsReflect->Create(mPsByteCode.Get(), mGraphics->mD3dDevice.Get());
-}
 
 void RenderExample::BuildPSO()
 {
   D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
   ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-  psoDesc.InputLayout           = {VertexPosNormalTex::inputLayout.data(), (UINT)VertexPosNormalTex::inputLayout.size()};
-  psoDesc.pRootSignature        = {mRootSignature.Get()};
-  psoDesc.VS                    = {reinterpret_cast<BYTE*>(mVsByteCode->GetBufferPointer()), mVsByteCode->GetBufferSize()};
-  psoDesc.PS                    = {reinterpret_cast<BYTE*>(mPsByteCode->GetBufferPointer()), mPsByteCode->GetBufferSize()};
+  psoDesc.InputLayout = {VertexPosNormalTex::inputLayout.data(), (UINT)VertexPosNormalTex::inputLayout.size()};
+  // psoDesc.pRootSignature = {mRootSignature.Get()};
+  psoDesc.pRootSignature = {mBoxShader.GetShaderInfo()->GetRootSignature()};
+  psoDesc.VS = {reinterpret_cast<BYTE*>(mBoxShader.GetVS()->GetBufferPointer()), mBoxShader.GetVS()->GetBufferSize()};
+  psoDesc.PS = {reinterpret_cast<BYTE*>(mBoxShader.GetPS()->GetBufferPointer()), mBoxShader.GetPS()->GetBufferSize()};
   psoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
   psoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
   psoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);

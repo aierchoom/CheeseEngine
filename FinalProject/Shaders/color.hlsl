@@ -88,6 +88,7 @@ struct VertexOut {
   float4 PosH : SV_POSITION;
   float3 PosW : POSITION;
   float3 NormalW : NORMAL;
+  float2 TexC : TEXCOORD;
 };
 
 VertexOut VS(VertexIn vin)
@@ -100,6 +101,7 @@ VertexOut VS(VertexIn vin)
   vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
 
   vout.PosH = mul(posW, gCameraTrans);
+  // vout.TexC = vin.Tex;
 
   return vout;
 }
@@ -114,7 +116,12 @@ float4 PS(VertexOut pin) : SV_Target
 
   const float shininess = gMaterial.Shininess;
   float3 shadowFactor   = 1.0f;
-  float3 directLight    = ComputePointLight(gLight, gMaterial, pin.PosW, pin.NormalW, toEyeW);
+
+  Material material = gMaterial;
+
+  // material.DiffuseAlbedo = gDiffuseMap.Sample(gSamLinear, pin.TexC) *
+  // gMaterial.DiffuseAlbedo;
+  float3 directLight = ComputePointLight(gLight, material, pin.PosW, pin.NormalW, toEyeW);
 
   float3 litColor = ambient.xyz + directLight;
 

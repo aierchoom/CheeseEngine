@@ -5,21 +5,8 @@
 #include <DirectXMath.h>
 
 #include "Common/TypeDef.h"
-
+#include "Vertex.h"
 using namespace DirectX;
-
-struct VertexPosNormalTex {
-  XMFLOAT3 pos;
-  XMFLOAT3 normal;
-  XMFLOAT2 tex;
-  static std::vector<D3D12_INPUT_ELEMENT_DESC> inputLayout;
-};
-
-std::vector<D3D12_INPUT_ELEMENT_DESC> VertexPosNormalTex::inputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-};
 
 template <class VertexType = VertexPosNormalTex, class IndexType = uint16>
 struct MeshData {

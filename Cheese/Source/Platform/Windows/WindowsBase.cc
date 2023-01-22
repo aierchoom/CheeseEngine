@@ -80,7 +80,7 @@ int WindowsMain(int argc, char** argv, CheeseApp* app)
     app->Load();
     app->Run();
   } catch (DxException& e) {
-    MessageBox(NULL, e.ToString().c_str(), CTEXT("HR Failed"), MB_OK);
+    logger.Error(e.ToString().c_str());
     return -1;
   }
   return 0;

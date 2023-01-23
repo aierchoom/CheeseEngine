@@ -40,17 +40,20 @@ LRESULT InputComponent::Response(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpar
       }
       return 0;
     }
-    case WM_LBUTTONDOWN:
+    case WM_LBUTTONDOWN: {
+      EKeyMap key = EKeyMap::MOUSE_LBUTTON;
+
+      mKeyStatus[key] = EKeyStatus::PRESSED;
+
+      vector<shared_ptr<IActionEvent>> pressedEventList = mPressedMap[key];
+      for (auto event : pressedEventList) {
+        (*event)();
+      }
+      return 0;
+    }
     case WM_RBUTTONDOWN: {
-      const uint32 rbdown = 0;
-      const uint32 lbdown = 1;
-      EKeyMap key;
-      if (wparam == lbdown) {
-        key = EKeyMap::MOUSE_LBUTTON;
-      }
-      if (wparam == rbdown) {
-        key = EKeyMap::MOUSE_RBUTTON;
-      }
+      EKeyMap key = EKeyMap::MOUSE_RBUTTON;
+
       mKeyStatus[key] = EKeyStatus::PRESSED;
 
       vector<shared_ptr<IActionEvent>> pressedEventList = mPressedMap[key];

@@ -18,5 +18,11 @@
     <None Include="Shaders\color.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\DefaultSampler.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

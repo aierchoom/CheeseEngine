@@ -13,6 +13,7 @@
 #include <Graphics/IGraphics.h>
 #include <Graphics/Shader.h>
 #include <Graphics/ShaderInfo.h>
+#include <Graphics/DDSTextureLoader.h>
 #include <Model/Box.h>
 #include <Windows.h>
 
@@ -71,7 +72,6 @@ class RenderExample : public CheeseApp, IEvent
   virtual void Update(float dt) override;
   void Draw();
 
-  void LoadBox();
   void BuildPSO();
 
   inline CheeseWindow* GetWindow() const override { return mWindow; }
@@ -87,7 +87,14 @@ class RenderExample : public CheeseApp, IEvent
   Graphics* mGraphics;
 
   Shader mBoxShader;
-  // ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
+
+  ComPtr<ID3D12DescriptorHeap> mSrvDescriptorHeap = nullptr;
+
+  ComPtr<ID3D12Resource> mAlbedoMap       = nullptr;
+  ComPtr<ID3D12Resource> mAlbedoMapUpload = nullptr;
+
+  ComPtr<ID3D12Resource> mNormalMap       = nullptr;
+  ComPtr<ID3D12Resource> mNormalMapUpload = nullptr;
 
   ComPtr<ID3D12PipelineState> mPSO = nullptr;
 
@@ -108,8 +115,9 @@ class RenderExample : public CheeseApp, IEvent
 bool RenderExample::Init()
 {
   // Register Action
-  InputComponent::Get()->RegisterOnAction(EKeyMap::MOUSE_LBUTTON, EKeyStatus::PRESSED, *this, &RenderExample::StartMoveMouse);
-  InputComponent::Get()->RegisterOnAction(EKeyMap::MOUSE_LBUTTON, EKeyStatus::RELEASED, *this, &RenderExample::StopMoveMouse);
+  auto ic = InputComponent::Get();
+  InputComponent::Get()->RegisterOnAction(EKeyMap::MOUSE_RBUTTON, EKeyStatus::PRESSED, *this, &RenderExample::StartMoveMouse);
+  InputComponent::Get()->RegisterOnAction(EKeyMap::MOUSE_RBUTTON, EKeyStatus::RELEASED, *this, &RenderExample::StopMoveMouse);
   InputComponent::Get()->RegisterOnAxis(EAxisEvent::MOUSE_X, *this, &RenderExample::AddYaw);
   InputComponent::Get()->RegisterOnAxis(EAxisEvent::MOUSE_Y, *this, &RenderExample::AddPitch);
 
@@ -141,9 +149,43 @@ bool RenderExample::Load()
   mBoxShader.AddShader(CTEXT("Shaders/color.hlsl"), ShaderType::PIXEL_SHADER);
   mBoxShader.GenerateShaderInfo(mGraphics->mD3dDevice.Get());
   mBoxShader.GetShaderInfo()->CreateRootSignature(mGraphics->mD3dDevice.Get());
-  mBoxShader.GetShaderInfo()->CreateCbvHeapDescriptor(mGraphics->mD3dDevice.Get());
 
-  LoadBox();
+  mBox.CreateGPUInfo(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get());
+
+  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
+                                  CTEXT("Resource/Texture/bricks.dds"), mAlbedoMap, mAlbedoMapUpload));
+
+  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
+                                  CTEXT("Resource/Texture/bricks_nmap.dds"), mNormalMap, mNormalMapUpload));
+
+  D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+  srvHeapDesc.NumDescriptors             = 1;
+  srvHeapDesc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  srvHeapDesc.Flags                      = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  TIFF(mGraphics->mD3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE srvDescriptor(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+  srvDescriptor.Offset(0, 32);
+  D3D12_SHADER_RESOURCE_VIEW_DESC albedoSrvDesc = {};
+  albedoSrvDesc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+  albedoSrvDesc.Format                          = mAlbedoMap->GetDesc().Format;
+  albedoSrvDesc.ViewDimension                   = D3D12_SRV_DIMENSION_TEXTURE2D;
+  albedoSrvDesc.Texture2D.MostDetailedMip       = 0;
+  albedoSrvDesc.Texture2D.MipLevels             = mAlbedoMap->GetDesc().MipLevels;
+  albedoSrvDesc.Texture2D.ResourceMinLODClamp   = 0.0f;
+  mGraphics->mD3dDevice->CreateShaderResourceView(mAlbedoMap.Get(), &albedoSrvDesc, srvDescriptor);
+
+  D3D12_SHADER_RESOURCE_VIEW_DESC normalSrvDesc = {};
+
+  srvDescriptor.Offset(1, 32);
+  normalSrvDesc.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+  normalSrvDesc.Format                        = mNormalMap->GetDesc().Format;
+  normalSrvDesc.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURE2D;
+  normalSrvDesc.Texture2D.MostDetailedMip     = 0;
+  normalSrvDesc.Texture2D.MipLevels           = mNormalMap->GetDesc().MipLevels;
+  normalSrvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+  mGraphics->mD3dDevice->CreateShaderResourceView(mNormalMap.Get(), &normalSrvDesc, srvDescriptor);
+
   BuildPSO();
 
   mGraphics->ExecuteCommandList();
@@ -186,8 +228,7 @@ void RenderExample::Draw()
   D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView   = mGraphics->DepthStencilView();
   mGraphics->mCommandList->OMSetRenderTargets(1, &currBackBufferView, true, &depthStencilView);
 
-  ID3D12DescriptorHeap* cbvHeap           = mBoxShader.GetShaderInfo()->GetCbvHeap();
-  ID3D12DescriptorHeap* descriptorHeaps[] = {cbvHeap};
+  ID3D12DescriptorHeap* descriptorHeaps[] = {mSrvDescriptorHeap.Get()};
   mGraphics->mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
   mGraphics->mCommandList->SetGraphicsRootSignature(mBoxShader.GetShaderInfo()->GetRootSignature());
@@ -199,9 +240,16 @@ void RenderExample::Draw()
   mGraphics->mCommandList->IASetIndexBuffer(&iBufferView);
   mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  for (auto iter : mBoxShader.GetShaderInfo()->mCBuffers) {
-    auto cbuffer = iter.second;
-    mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbuffer.GetSlot(),
+  CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+  tex.Offset(0, mGraphics->mCbvSrvUavDescriptorSize);
+
+  mGraphics->mCommandList->SetGraphicsRootDescriptorTable(0, tex);
+  tex.Offset(1, mGraphics->mCbvSrvUavDescriptorSize);
+  mGraphics->mCommandList->SetGraphicsRootDescriptorTable(1, tex);
+
+  for (auto pair : mBoxShader.GetShaderInfo()->mCBuffers) {
+    auto cbuffer = pair.second;
+    mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbuffer.GetSlot() + 2,
                                                                cbuffer.mUploadBuffer->GetGPUVirtualAddress());
   }
   mGraphics->mCommandList->DrawIndexedInstanced(static_cast<UINT>(mBox.mMesh.indexVec.size()), 1, 0, 0, 0);
@@ -260,16 +308,15 @@ void RenderExample::Update(float dt)
   if (InputComponent::Get()->GetKeyStatus(EKeyMap::KEY_D) == EKeyStatus::PRESSED) {
     mCamera.MoveRight(speed * dt);
   }
-  static float rotTime = 0.0f;
-  rotTime += dt;
   // Convert Spherical to Cartesian coordinates.
   float x = mRadius * sinf(mPhi) * cosf(mTheta);
   float z = mRadius * sinf(mPhi) * sinf(mTheta);
   float y = mRadius * cosf(mPhi);
 
   XMMATRIX world = XMLoadFloat4x4(&mWorld);
-  world          = XMMatrixRotationZ(sin(rotTime));
-  world          = world * XMMatrixRotationY(sin(rotTime));
+
+  world = XMMatrixRotationX(sin(15.f));
+  world = world * XMMatrixRotationY(sin(10.f));
 
   mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
   mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gInvWorld"), InverseTranspose(world));
@@ -281,14 +328,11 @@ void RenderExample::Update(float dt)
   mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
 }
 
-void RenderExample::LoadBox() { mBox.CreateGPUInfo(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get()); }
-
 void RenderExample::BuildPSO()
 {
   D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
   ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-  psoDesc.InputLayout = {VertexPosNormalTex::inputLayout.data(), (UINT)VertexPosNormalTex::inputLayout.size()};
-  // psoDesc.pRootSignature = {mRootSignature.Get()};
+  psoDesc.InputLayout    = {VertexPosNormalTex::inputLayout.data(), (UINT)VertexPosNormalTex::inputLayout.size()};
   psoDesc.pRootSignature = {mBoxShader.GetShaderInfo()->GetRootSignature()};
   psoDesc.VS = {reinterpret_cast<BYTE*>(mBoxShader.GetVS()->GetBufferPointer()), mBoxShader.GetVS()->GetBufferSize()};
   psoDesc.PS = {reinterpret_cast<BYTE*>(mBoxShader.GetPS()->GetBufferPointer()), mBoxShader.GetPS()->GetBufferSize()};

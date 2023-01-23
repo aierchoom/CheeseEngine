@@ -1,68 +1,8 @@
-struct Light {
-  float3 Strength;
-  float FalloffStart;
-  float3 Direction;
-  float FalloffEnd;
-  float3 Position;
-  float SpotPower;
-};
+#include "DefaultSampler.hlsli"
+#include "LightingUtil.hlsli"
 
-struct Material {
-  float4 DiffuseAlbedo;
-  float3 FresnelR0;
-  float Shininess;
-};
-
-float CalcAttenuation(float d, float falloffStart, float falloffEnd)
-{
-  return saturate((falloffEnd - d) / (falloffEnd - falloffStart));
-}
-
-float3 SchlickFresnel(float3 R0, float3 normal, float3 lightVec)
-{
-  float cosIncidentAngle = saturate(dot(normal, lightVec));
-
-  float f0              = 1.0f - cosIncidentAngle;
-  float3 reflectPercent = R0 + (1.0f - R0) * (f0 * f0 * f0 * f0 * f0);
-
-  return reflectPercent;
-}
-
-float3 BlinnPhong(float3 lightStrength, float3 lightVec, float3 normal, float3 toEye, Material mat)
-{
-  const float m  = mat.Shininess * 256.0f;
-  float3 halfVec = normalize(toEye + lightVec);
-
-  float roughnessFactor = (m + 8.0f) * pow(max(dot(halfVec, normal), 0.0f), m) / 8.0f;
-  float3 fresnelFactor  = SchlickFresnel(mat.FresnelR0, halfVec, lightVec);
-
-  float3 specAlbedo = fresnelFactor * roughnessFactor;
-
-  // Our spec formula goes outside [0,1] range, but we are
-  // doing LDR rendering.  So scale it down a bit.
-  specAlbedo = specAlbedo / (specAlbedo + 1.0f);
-
-  return (mat.DiffuseAlbedo.rgb + specAlbedo) * lightStrength;
-}
-
-float3 ComputePointLight(Light L, Material mat, float3 pos, float3 normal, float3 toEye)
-{
-  float3 lightVec = L.Position - pos;
-
-  float d = length(lightVec);
-
-  if (d > L.FalloffEnd) return 0.0f;
-
-  lightVec /= d;
-
-  float ndotl          = max(dot(lightVec, normal), 0.0f);
-  float3 lightStrength = L.Strength * ndotl;
-
-  float att = CalcAttenuation(d, L.FalloffStart, L.FalloffEnd);
-  lightStrength *= att;
-
-  return BlinnPhong(lightStrength, lightVec, normal, toEye, mat);
-}
+Texture2D gAlbedoMap : register(t0);
+Texture2D gNormalMap : register(t1);
 
 cbuffer cbPerObject : register(b0)
 {
@@ -81,7 +21,7 @@ cbuffer cbMaterial : register(b1)
 struct VertexIn {
   float3 PosL : POSITION;
   float3 NormalL : NORMAL;
-  // float2 Tex : TEXTCOORD;
+  float2 TexC : TEXCOORD;
 };
 
 struct VertexOut {
@@ -101,7 +41,7 @@ VertexOut VS(VertexIn vin)
   vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
 
   vout.PosH = mul(posW, gCameraTrans);
-  // vout.TexC = vin.Tex;
+  vout.TexC = vin.TexC;
 
   return vout;
 }
@@ -112,16 +52,18 @@ float4 PS(VertexOut pin) : SV_Target
 
   float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
-  float4 ambient = float4(0.2f, 0.2f, 0.2f, 1.0f) * gMaterial.DiffuseAlbedo;
+  float4 diffuseAlbedo = gAlbedoMap.Sample(gLinearWrap, pin.TexC);
+
+  float3 normal  = normalize(gNormalMap.Sample(gLinearWrap, pin.TexC).rgb);
+  float4 ambient = diffuseAlbedo * gMaterial.DiffuseAlbedo;
 
   const float shininess = gMaterial.Shininess;
   float3 shadowFactor   = 1.0f;
 
   Material material = gMaterial;
 
-  // material.DiffuseAlbedo = gDiffuseMap.Sample(gSamLinear, pin.TexC) *
-  // gMaterial.DiffuseAlbedo;
-  float3 directLight = ComputePointLight(gLight, material, pin.PosW, pin.NormalW, toEyeW);
+  material.DiffuseAlbedo = diffuseAlbedo;
+  float3 directLight     = ComputePointLight(gLight, material, pin.PosW, normal, toEyeW);
 
   float3 litColor = ambient.xyz + directLight;
 

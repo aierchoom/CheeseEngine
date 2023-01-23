@@ -74,6 +74,7 @@
     </ClCompile>
     <ClCompile Include="Source\Model\Vertex.cc" />
     <ClCompile Include="Source\Graphics\Shader.cc" />
+    <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\CheeseApp.h">
@@ -135,5 +136,7 @@
     </ClInclude>
     <ClInclude Include="Source\Model\Vertex.h" />
     <ClInclude Include="Source\Graphics\Shader.h" />
+    <ClInclude Include="Source\Model\Texture2D.h" />
+    <ClInclude Include="Source\Graphics\DDSTextureLoader.h" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@
 #include <strsafe.h>
 #include "Core/CoreMinimal.h"
 #include "Utils/Log/Logger.h"
+#include "Model/Texture2D.h"
 
 using namespace std;
 
@@ -69,10 +70,17 @@ void ShaderInfo::Generate(ID3DBlob* shader, ID3D12Device* device)
       CreateConstantBuffer(device, shaderInputDesc, shaderReflection->GetConstantBufferByName(shaderInputDesc.Name));
     }
     if (shaderInputDesc.Type == D3D_SIT_SAMPLER) {
-      logger.Info(CTEXT("get a sampler"));
+      CD3DX12_STATIC_SAMPLER_DESC linearWrap(shaderInputDesc.BindPoint,         // shaderRegister
+                                             D3D12_FILTER_MIN_MAG_MIP_LINEAR,   // filter
+                                             D3D12_TEXTURE_ADDRESS_MODE_WRAP,   // addressU
+                                             D3D12_TEXTURE_ADDRESS_MODE_WRAP,   // addressV
+                                             D3D12_TEXTURE_ADDRESS_MODE_WRAP);  // addressW
+      mSamplers[ConvertToCheString(shaderInputDesc.Name)] = linearWrap;
     }
     if (shaderInputDesc.Type == D3D_SIT_TEXTURE) {
-      logger.Info(CTEXT("get a texture"));
+      Texture2D texture = {shaderInputDesc.BindPoint};
+
+      mTextures[ConvertToCheString(shaderInputDesc.Name)] = texture;
     }
   }
 }
@@ -83,7 +91,10 @@ void ShaderInfo::CreateConstantBuffer(ID3D12Device* device, D3D12_SHADER_INPUT_B
   // Get the varible info in the cbuffer and create the mapping.
   D3D12_SHADER_BUFFER_DESC cbufferDescs{};
   HRESULT hr = cbReflection->GetDesc(&cbufferDescs);
-  if (FAILED(hr)) logger.Info(CTEXT("Can't get shader info"));
+  if (FAILED(hr)) {
+    logger.Error(CTEXT("Can't get shader info"));
+    TIFF(hr);
+  }
 
   CheString cbufferName = ConvertToCheString(bindDesc.Name);
 
@@ -105,40 +116,39 @@ void ShaderInfo::CreateConstantBuffer(ID3D12Device* device, D3D12_SHADER_INPUT_B
 
 void ShaderInfo::CreateRootSignature(ID3D12Device* device)
 {
-  vector<CD3DX12_ROOT_PARAMETER> slotRootParameter(mCBuffers.size());
+  const uint32 paramterNo = mTextures.size() + mCBuffers.size();
+  vector<CD3DX12_ROOT_PARAMETER> slotRootParameter(paramterNo);
 
-  for (uint32 i = 0; i < slotRootParameter.size(); i++) {
-    slotRootParameter[i].InitAsConstantBufferView(i);
+  uint32 paramterIndex = 0;
+
+  CD3DX12_DESCRIPTOR_RANGE texTable[2];
+  for (auto iter : mTextures) {
+    auto texture = iter.second;
+    texTable[paramterIndex].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, texture.slot);
+    slotRootParameter[paramterIndex].InitAsDescriptorTable(1, &texTable[paramterIndex], D3D12_SHADER_VISIBILITY_PIXEL);
+    paramterIndex++;
   }
 
-  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(slotRootParameter.size(), slotRootParameter.data(), 0, nullptr,
-                                          D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+  for (uint32 i = 0; i < mCBuffers.size(); i++, paramterIndex++) {
+    slotRootParameter[paramterIndex].InitAsConstantBufferView(i);
+  }
+
+  auto staticSampler = GetStaticSamplers();
+
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(slotRootParameter.size(), slotRootParameter.data(), staticSampler.size(),
+                                          staticSampler.data(), D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
   ComPtr<ID3DBlob> serializedRootSig = nullptr;
   ComPtr<ID3DBlob> errorBlob         = nullptr;
-  HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(),
-                                           errorBlob.GetAddressOf());
+  TIFF(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(),
+                                   errorBlob.GetAddressOf()));
 
   if (errorBlob != nullptr) {
-    ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+    logger.Error(ConvertToCheString((char*)errorBlob->GetBufferPointer()));
   }
-  TIFF(hr);
 
   TIFF(device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(),
                                    IID_PPV_ARGS(mRootSignature.GetAddressOf())));
-}
-
-void ShaderInfo::CreateCbvHeapDescriptor(ID3D12Device* device)
-{
-  if (mCBuffers.size() == 0) {
-    return;
-  }
-  D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-  cbvHeapDesc.NumDescriptors = mCBuffers.size();
-  cbvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  cbvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  cbvHeapDesc.NodeMask       = 0;
-  device->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&mCbvHeap));
 }
 
 void ShaderInfo::SetFloat(const CheString& varName, float value)

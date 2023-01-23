@@ -122,7 +122,7 @@ class Box : public Model
     IndexFormat          = DXGI_FORMAT_R16_UINT;
     IndexBufferByteSize  = ibByteSize;
 
-    mMaterial.diffuseAlbedo = XMFLOAT4(0.0f, 0.2f, 0.6f, 1.0f);
+    mMaterial.diffuseAlbedo = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
     mMaterial.fresnelR0     = XMFLOAT3(0.01f, 0.01f, 0.01f);
     mMaterial.roughness     = 0.125f;
   }

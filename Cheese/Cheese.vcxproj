@@ -133,6 +133,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Source\Core\Camera.cc" />
+    <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp" />
     <ClCompile Include="Source\Graphics\Shader.cc" />
     <ClCompile Include="Source\Model\Vertex.cc" />
     <ClCompile Include="Source\Utils\Date\Date.cc" />
@@ -149,7 +150,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\Camera.h" />
+    <ClInclude Include="Source\Graphics\DDSTextureLoader.h" />
     <ClInclude Include="Source\Graphics\Shader.h" />
+    <ClInclude Include="Source\Model\Texture2D.h" />
     <ClInclude Include="Source\Math\Transform.h" />
     <ClInclude Include="Source\Model\Box.h" />
     <ClInclude Include="Source\Model\Model.h" />

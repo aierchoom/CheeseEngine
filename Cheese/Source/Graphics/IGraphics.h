@@ -14,19 +14,18 @@
 #pragma comment(lib, "dxgi.lib")
 
 struct Material {
-  DirectX::XMFLOAT4 diffuseAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
-  DirectX::XMFLOAT3 fresnelR0     = {0.01f, 0.01f, 0.01f};
-  float roughness                 = 0.25f;
+  DirectX::XMFLOAT4 diffuseAlbedo;
+  DirectX::XMFLOAT3 fresnelR0;
+  float roughness;
 };
 
-struct Light
-{
-    DirectX::XMFLOAT3 strength = {0.5,0.5f,0.5f};
-    float falloffStart = 1.0f;
-    DirectX::XMFLOAT3 direction = {0.0f,-1.0f,0.0f};
-    float falloffEnd = 10.0f; 
-    DirectX::XMFLOAT3 position = {0.0f,3.0f,0.0f};
-    float SpotPower = 64.0f;
+struct Light {
+  DirectX::XMFLOAT3 strength;
+  float falloffStart;
+  DirectX::XMFLOAT3 direction;
+  float falloffEnd;
+  DirectX::XMFLOAT3 position;
+  float SpotPower;
 };
 
 class Graphics
@@ -74,7 +73,7 @@ class Graphics
   ComPtr<ID3D12DescriptorHeap> mDsvHeap;
 
   D3D12_VIEWPORT mScreenViewport = {};
-  D3D12_RECT mScissorRect = {};
+  D3D12_RECT mScissorRect        = {};
 
   UINT mRtvDescriptorSize       = 0;
   UINT mDsvDescriptorSize       = 0;

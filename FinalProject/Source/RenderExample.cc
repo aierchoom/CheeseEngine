@@ -35,7 +35,7 @@ XMFLOAT4X4 Identity4x4()
 class RenderExample : public CheeseApp, IEvent
 {
  public:
-  RenderExample() : mWindow(new CheeseWindow(1280, 720)), mGraphics(new Graphics()), mBox(2, 2, 2) {}
+  RenderExample() : mWindow(new CheeseWindow(1280, 720)), mGraphics(new Graphics()), mBox(2, 2, 2), mLight() {}
 
   virtual ~RenderExample() {}
 
@@ -106,7 +106,7 @@ class RenderExample : public CheeseApp, IEvent
   float mPhi    = XM_PIDIV4;
   float mRadius = 5.0f;
 
-  Box<VertexPosNormalTex> mBox;
+  Box<VertexPosNormalTangentTex> mBox;
   Light mLight;
 
   bool mIsMovingMouse = false;
@@ -151,6 +151,16 @@ bool RenderExample::Load()
   mBoxShader.GetShaderInfo()->CreateRootSignature(mGraphics->mD3dDevice.Get());
 
   mBox.CreateGPUInfo(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get());
+  mBox.mMaterial.diffuseAlbedo = {0.01f, 0.01f, 0.01f, 1.0f};
+  mBox.mMaterial.fresnelR0     = {0.04f, 0.04f, 0.04f};
+  mBox.mMaterial.roughness     = 0.6f;
+
+  mLight.strength     = {1.0f, 1.0f, 1.0f};
+  mLight.falloffStart = 1.0f;
+  mLight.direction    = {0.0f, 1.0f, 0.0f};
+  mLight.falloffEnd   = 10.0f;
+  mLight.position     = {0.0f, 2.0f, 0.2f};
+  mLight.SpotPower    = 64.0f;
 
   TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
                                   CTEXT("Resource/Texture/bricks.dds"), mAlbedoMap, mAlbedoMapUpload));
@@ -159,13 +169,13 @@ bool RenderExample::Load()
                                   CTEXT("Resource/Texture/bricks_nmap.dds"), mNormalMap, mNormalMapUpload));
 
   D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-  srvHeapDesc.NumDescriptors             = 1;
+  srvHeapDesc.NumDescriptors             = 2;
   srvHeapDesc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
   srvHeapDesc.Flags                      = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   TIFF(mGraphics->mD3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
 
   CD3DX12_CPU_DESCRIPTOR_HANDLE srvDescriptor(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-  srvDescriptor.Offset(0, 32);
+  srvDescriptor.Offset(0, mGraphics->mCbvSrvUavDescriptorSize);
   D3D12_SHADER_RESOURCE_VIEW_DESC albedoSrvDesc = {};
   albedoSrvDesc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
   albedoSrvDesc.Format                          = mAlbedoMap->GetDesc().Format;
@@ -177,7 +187,7 @@ bool RenderExample::Load()
 
   D3D12_SHADER_RESOURCE_VIEW_DESC normalSrvDesc = {};
 
-  srvDescriptor.Offset(1, 32);
+  srvDescriptor.Offset(1, mGraphics->mCbvSrvUavDescriptorSize);
   normalSrvDesc.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
   normalSrvDesc.Format                        = mNormalMap->GetDesc().Format;
   normalSrvDesc.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -191,7 +201,7 @@ bool RenderExample::Load()
   mGraphics->ExecuteCommandList();
   mGraphics->FlushCommandQueue();
 
-  mCamera.LookAt(XMFLOAT3(0.0f, 0.0f, -5.0f), XMFLOAT3(0.0f, 0.0f, 0.0f));
+  mCamera.LookAt(XMFLOAT3(0.0f, 2.0f, -5.0f), XMFLOAT3(0.0f, 0.0f, 0.0f));
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
   mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
   mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gCameraTrans"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
@@ -240,18 +250,20 @@ void RenderExample::Draw()
   mGraphics->mCommandList->IASetIndexBuffer(&iBufferView);
   mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-  tex.Offset(0, mGraphics->mCbvSrvUavDescriptorSize);
-
-  mGraphics->mCommandList->SetGraphicsRootDescriptorTable(0, tex);
-  tex.Offset(1, mGraphics->mCbvSrvUavDescriptorSize);
-  mGraphics->mCommandList->SetGraphicsRootDescriptorTable(1, tex);
-
   for (auto pair : mBoxShader.GetShaderInfo()->mCBuffers) {
     auto cbuffer = pair.second;
-    mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbuffer.GetSlot() + 2,
+    mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbuffer.GetSlot(),
                                                                cbuffer.mUploadBuffer->GetGPUVirtualAddress());
   }
+
+  for (auto iter : mBoxShader.GetShaderInfo()->mTextures) {
+    auto texture = iter.second;
+    CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    tex.Offset(texture.slot, mGraphics->mCbvSrvUavDescriptorSize);
+    // offset cbuffer paramter index.
+    mGraphics->mCommandList->SetGraphicsRootDescriptorTable(texture.slot + mBoxShader.GetShaderInfo()->mCBuffers.size(), tex);
+  }
+
   mGraphics->mCommandList->DrawIndexedInstanced(static_cast<UINT>(mBox.mMesh.indexVec.size()), 1, 0, 0, 0);
 
   // Indicate a state tansition on the resource usage.
@@ -268,6 +280,7 @@ void RenderExample::Draw()
   if (FAILED(hr)) {
     hr = mGraphics->mD3dDevice->GetDeviceRemovedReason();
     logger.Error(_com_error(hr).ErrorMessage());
+    TIFF(hr);
   }
 
   // Wait until frame commands are complete. This waiting is inefficient and is
@@ -295,6 +308,9 @@ void RenderExample::Run()
 
 void RenderExample::Update(float dt)
 {
+  static float rotTime = 0.0f;
+  rotTime += dt;
+
   float speed = 2.0f;
   if (InputComponent::Get()->GetKeyStatus(EKeyMap::KEY_W) == EKeyStatus::PRESSED) {
     mCamera.MoveForward(speed * dt);
@@ -315,8 +331,8 @@ void RenderExample::Update(float dt)
 
   XMMATRIX world = XMLoadFloat4x4(&mWorld);
 
-  world = XMMatrixRotationX(sin(15.f));
-  world = world * XMMatrixRotationY(sin(10.f));
+  mLight.position.x = sin(rotTime);
+  mLight.position.y = cos(rotTime) + 1.5f;
 
   mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
   mBoxShader.GetShaderInfo()->SetMatrix(CTEXT("cbPerObject.gInvWorld"), InverseTranspose(world));
@@ -332,7 +348,7 @@ void RenderExample::BuildPSO()
 {
   D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
   ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-  psoDesc.InputLayout    = {VertexPosNormalTex::inputLayout.data(), (UINT)VertexPosNormalTex::inputLayout.size()};
+  psoDesc.InputLayout    = {VertexPosNormalTangentTex::inputLayout.data(), (UINT)VertexPosNormalTangentTex::inputLayout.size()};
   psoDesc.pRootSignature = {mBoxShader.GetShaderInfo()->GetRootSignature()};
   psoDesc.VS = {reinterpret_cast<BYTE*>(mBoxShader.GetVS()->GetBufferPointer()), mBoxShader.GetVS()->GetBufferSize()};
   psoDesc.PS = {reinterpret_cast<BYTE*>(mBoxShader.GetPS()->GetBufferPointer()), mBoxShader.GetPS()->GetBufferSize()};

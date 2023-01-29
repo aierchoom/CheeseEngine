@@ -21,6 +21,7 @@ cbuffer cbMaterial : register(b1)
 struct VertexIn {
   float3 PosL : POSITION;
   float3 NormalL : NORMAL;
+  float3 TangentU : TANGENT;
   float2 TexC : TEXCOORD;
 };
 
@@ -28,6 +29,7 @@ struct VertexOut {
   float4 PosH : SV_POSITION;
   float3 PosW : POSITION;
   float3 NormalW : NORMAL;
+  float3 TangentW : TANGENT;
   float2 TexC : TEXCOORD;
 };
 
@@ -38,7 +40,8 @@ VertexOut VS(VertexIn vin)
   float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
   vout.PosW   = posW.xyz;
 
-  vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+  vout.NormalW  = mul(vin.NormalL, (float3x3)gWorld);
+  vout.TangentW = mul(vin.TangentU, (float3x3)gWorld);
 
   vout.PosH = mul(posW, gCameraTrans);
   vout.TexC = vin.TexC;
@@ -54,16 +57,17 @@ float4 PS(VertexOut pin) : SV_Target
 
   float4 diffuseAlbedo = gAlbedoMap.Sample(gLinearWrap, pin.TexC);
 
-  float3 normal  = normalize(gNormalMap.Sample(gLinearWrap, pin.TexC).rgb);
+  float3 normal       = gNormalMap.Sample(gLinearWrap, pin.TexC).rgb;
+  float3 bumpedNormal = NormalSampleToWorldSpace(normal, pin.NormalW, pin.TangentW);
+
   float4 ambient = diffuseAlbedo * gMaterial.DiffuseAlbedo;
 
   const float shininess = gMaterial.Shininess;
-  float3 shadowFactor   = 1.0f;
 
   Material material = gMaterial;
 
   material.DiffuseAlbedo = diffuseAlbedo;
-  float3 directLight     = ComputePointLight(gLight, material, pin.PosW, normal, toEyeW);
+  float3 directLight     = ComputePointLight(gLight, material, pin.PosW, bumpedNormal, toEyeW);
 
   float3 litColor = ambient.xyz + directLight;
 

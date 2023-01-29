@@ -5,9 +5,10 @@
 #include <DirectXMath.h>
 using namespace DirectX;
 
-struct VertexPosNormalTex {
+struct VertexPosNormalTangentTex {
   XMFLOAT3 pos;
   XMFLOAT3 normal;
+  XMFLOAT3 tangent;
   XMFLOAT2 tex;
   static std::vector<D3D12_INPUT_ELEMENT_DESC> inputLayout;
 };

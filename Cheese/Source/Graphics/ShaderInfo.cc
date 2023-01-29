@@ -116,21 +116,25 @@ void ShaderInfo::CreateConstantBuffer(ID3D12Device* device, D3D12_SHADER_INPUT_B
 
 void ShaderInfo::CreateRootSignature(ID3D12Device* device)
 {
-  const uint32 paramterNo = mTextures.size() + mCBuffers.size();
+  // 1.: constant buffer
+  // 2.: texture
+
+  const uint32 cbufferNo  = mCBuffers.size();
+  const uint32 textureNo  = mTextures.size();
+  const uint32 paramterNo = cbufferNo + textureNo;
   vector<CD3DX12_ROOT_PARAMETER> slotRootParameter(paramterNo);
 
-  uint32 paramterIndex = 0;
-
-  CD3DX12_DESCRIPTOR_RANGE texTable[2];
-  for (auto iter : mTextures) {
-    auto texture = iter.second;
-    texTable[paramterIndex].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, texture.slot);
-    slotRootParameter[paramterIndex].InitAsDescriptorTable(1, &texTable[paramterIndex], D3D12_SHADER_VISIBILITY_PIXEL);
-    paramterIndex++;
+  for (uint32 i = 0; i < mCBuffers.size(); i++) {
+    slotRootParameter[i].InitAsConstantBufferView(i);
   }
 
-  for (uint32 i = 0; i < mCBuffers.size(); i++, paramterIndex++) {
-    slotRootParameter[paramterIndex].InitAsConstantBufferView(i);
+  vector<CD3DX12_DESCRIPTOR_RANGE> texTable(textureNo);
+  for (auto iter : mTextures) {
+    auto texture = iter.second;
+    texTable[texture.slot].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, texture.slot);
+    // offset cbuffer paramter index.
+    slotRootParameter[texture.slot + cbufferNo].InitAsDescriptorTable(1, &texTable[texture.slot],
+                                                                      D3D12_SHADER_VISIBILITY_PIXEL);
   }
 
   auto staticSampler = GetStaticSamplers();

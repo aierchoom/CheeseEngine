@@ -6,7 +6,7 @@
 struct VertexData {
   DirectX::XMFLOAT3 pos;
   DirectX::XMFLOAT3 normal;
-  DirectX::XMFLOAT4 tangent;
+  DirectX::XMFLOAT3 tangent;
   DirectX::XMFLOAT4 color;
   DirectX::XMFLOAT2 tex;
 };
@@ -55,29 +55,29 @@ class Box : public Model
     vertexDataArr[23].pos = XMFLOAT3(w2, -h2, -d2);
 
     for (UINT i = 0; i < 4; ++i) {
-      // 右面(+X面)
+      // right(+X face)
       vertexDataArr[i].normal  = XMFLOAT3(1.0f, 0.0f, 0.0f);
-      vertexDataArr[i].tangent = XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
+      vertexDataArr[i].tangent = XMFLOAT3(0.0f, 0.0f, 1.0f);
       vertexDataArr[i].color   = color;
-      // 左面(-X面)
+      // left(-X face)
       vertexDataArr[i + 4].normal  = XMFLOAT3(-1.0f, 0.0f, 0.0f);
-      vertexDataArr[i + 4].tangent = XMFLOAT4(0.0f, 0.0f, -1.0f, 1.0f);
+      vertexDataArr[i + 4].tangent = XMFLOAT3(0.0f, 0.0f, -1.0f);
       vertexDataArr[i + 4].color   = color;
-      // 顶面(+Y面)
+      // top(+Y face)
       vertexDataArr[i + 8].normal  = XMFLOAT3(0.0f, 1.0f, 0.0f);
-      vertexDataArr[i + 8].tangent = XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f);
+      vertexDataArr[i + 8].tangent = XMFLOAT3(1.0f, 0.0f, 0.0f);
       vertexDataArr[i + 8].color   = color;
-      // 底面(-Y面)
+      // bottom(-Y face)
       vertexDataArr[i + 12].normal  = XMFLOAT3(0.0f, -1.0f, 0.0f);
-      vertexDataArr[i + 12].tangent = XMFLOAT4(-1.0f, 0.0f, 0.0f, 1.0f);
+      vertexDataArr[i + 12].tangent = XMFLOAT3(-1.0f, 0.0f, 0.0f);
       vertexDataArr[i + 12].color   = color;
-      // 背面(+Z面)
+      // back(+Z face)
       vertexDataArr[i + 16].normal  = XMFLOAT3(0.0f, 0.0f, 1.0f);
-      vertexDataArr[i + 16].tangent = XMFLOAT4(-1.0f, 0.0f, 0.0f, 1.0f);
+      vertexDataArr[i + 16].tangent = XMFLOAT3(-1.0f, 0.0f, 0.0f);
       vertexDataArr[i + 16].color   = color;
-      // 正面(-Z面)
+      // front(-Z face)
       vertexDataArr[i + 20].normal  = XMFLOAT3(0.0f, 0.0f, -1.0f);
-      vertexDataArr[i + 20].tangent = XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f);
+      vertexDataArr[i + 20].tangent = XMFLOAT3(1.0f, 0.0f, 0.0f);
       vertexDataArr[i + 20].color   = color;
     }
 
@@ -93,18 +93,18 @@ class Box : public Model
     }
 
     mMesh.indexVec = {
-        0,  1,  2,  2,  3,  0,   // 右面(+X面)
-        4,  5,  6,  6,  7,  4,   // 左面(-X面)
-        8,  9,  10, 10, 11, 8,   // 顶面(+Y面)
-        12, 13, 14, 14, 15, 12,  // 底面(-Y面)
-        16, 17, 18, 18, 19, 16,  // 背面(+Z面)
-        20, 21, 22, 22, 23, 20   // 正面(-Z面)
+        0,  1,  2,  2,  3,  0,   // right(+X face)
+        4,  5,  6,  6,  7,  4,   // left(-X face)
+        8,  9,  10, 10, 11, 8,   // top(+Y face)
+        12, 13, 14, 14, 15, 12,  // bottom(-Y face)
+        16, 17, 18, 18, 19, 16,  // back(+Z face)
+        20, 21, 22, 22, 23, 20   // front(-Z face)
     };
   }
 
   void CreateGPUInfo(ID3D12Device* device, ID3D12GraphicsCommandList* commandList)
   {
-    const uint32 vbByteSize = mMesh.indexVec.size() * sizeof(VertexPosNormalTex);
+    const uint32 vbByteSize = mMesh.indexVec.size() * sizeof(VertexPosNormalTangentTex);
     const uint32 ibByteSize = mMesh.indexVec.size() * sizeof(uint16);
 
     TIFF(D3DCreateBlob(vbByteSize, &mVertexBufferCPU));
@@ -117,14 +117,10 @@ class Box : public Model
         D3DUtil::CreateDefaultBuffer(device, commandList, mMesh.vertexVec.data(), vbByteSize, VertexBufferUploader);
     mIndexBufferGPU = D3DUtil::CreateDefaultBuffer(device, commandList, mMesh.indexVec.data(), ibByteSize, IndexBufferUploader);
 
-    VertexByteStride     = sizeof(VertexPosNormalTex);
+    VertexByteStride     = sizeof(VertexPosNormalTangentTex);
     VertexBufferByteSize = vbByteSize;
     IndexFormat          = DXGI_FORMAT_R16_UINT;
     IndexBufferByteSize  = ibByteSize;
-
-    mMaterial.diffuseAlbedo = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
-    mMaterial.fresnelR0     = XMFLOAT3(0.01f, 0.01f, 0.01f);
-    mMaterial.roughness     = 0.125f;
   }
 
   D3D12_VERTEX_BUFFER_VIEW VertexBufferView()
@@ -149,7 +145,7 @@ class Box : public Model
   virtual ID3D12Resource* GetIndexBufferGPU() { return nullptr; }
 
  public:
-  MeshData<VertexPosNormalTex, uint16> mMesh;
+  MeshData mMesh;
 
   ComPtr<ID3D12Resource> VertexBufferUploader = nullptr;
   ComPtr<ID3D12Resource> IndexBufferUploader  = nullptr;
@@ -163,13 +159,14 @@ class Box : public Model
 
   inline void InsertVertexElement(VertexType& vertexDst, const VertexData& vertexSrc)
   {
+    sizeof(VertexPosNormalTangentTex);
     static std::string semanticName;
     static const std::map<std::string, std::pair<size_t, size_t>> semanticSizeMap = {
         {"POSITION", std::pair<size_t, size_t>(0, 12)},
         {"NORMAL", std::pair<size_t, size_t>(12, 24)},
-        {"TANGENT", std::pair<size_t, size_t>(24, 40)},
-        {"COLOR", std::pair<size_t, size_t>(40, 56)},
-        {"TEXCOORD", std::pair<size_t, size_t>(56, 64)}};
+        {"TANGENT", std::pair<size_t, size_t>(24, 36)},
+        {"COLOR", std::pair<size_t, size_t>(36, 52)},
+        {"TEXCOORD", std::pair<size_t, size_t>(52, 60)}};
 
     for (size_t i = 0; i < VertexType::inputLayout.size(); i++) {
       semanticName      = VertexType::inputLayout[i].SemanticName;

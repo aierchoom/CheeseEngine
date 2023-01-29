@@ -72,9 +72,15 @@
     <ClCompile Include="Source\Core\Camera.cc">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Model\Vertex.cc" />
-    <ClCompile Include="Source\Graphics\Shader.cc" />
-    <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp" />
+    <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp">
+      <Filter>Model</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Graphics\Shader.cc">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Model\Vertex.cc">
+      <Filter>Model</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\CheeseApp.h">
@@ -134,9 +140,17 @@
     <ClInclude Include="Source\Math\Transform.h">
       <Filter>Math</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Model\Vertex.h" />
-    <ClInclude Include="Source\Graphics\Shader.h" />
-    <ClInclude Include="Source\Model\Texture2D.h" />
-    <ClInclude Include="Source\Graphics\DDSTextureLoader.h" />
+    <ClInclude Include="Source\Graphics\DDSTextureLoader.h">
+      <Filter>Model</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Graphics\Shader.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Model\Texture2D.h">
+      <Filter>Model</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Model\Vertex.h">
+      <Filter>Model</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -8,15 +8,9 @@
 #include "Vertex.h"
 using namespace DirectX;
 
-template <class VertexType = VertexPosNormalTex, class IndexType = uint16>
 struct MeshData {
-  std::vector<VertexType> vertexVec;
-  std::vector<IndexType> indexVec;
-  MeshData()
-  {
-    static_assert(sizeof(IndexType) == 2 || sizeof(IndexType) == 4, "The size of IndexType must be 2 bytes or 4 bytes!");
-    static_assert(std::is_unsigned<IndexType>::value, "IndexType must be unsigned integer!");
-  }
+  std::vector<VertexPosNormalTangentTex> vertexVec;
+  std::vector<uint16> indexVec;
 };
 
 // 设计作为模型总类的接口，与d3d12进行对接，暴露资源给d3d12。

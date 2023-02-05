@@ -12,8 +12,7 @@ class CheeseApp
   virtual bool Init() = 0;
   virtual void Exit() = 0;
 
-  virtual bool Load()   = 0;
-  virtual void UnLoad() = 0;
+  virtual bool Load() = 0;
 
   virtual void Run()            = 0;
   virtual void Clear()          = 0;

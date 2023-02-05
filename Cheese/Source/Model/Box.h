@@ -145,7 +145,7 @@ class Box : public Model
   virtual ID3D12Resource* GetIndexBufferGPU() { return nullptr; }
 
  public:
-  MeshData mMesh;
+  MeshData<uint16> mMesh;
 
   ComPtr<ID3D12Resource> VertexBufferUploader = nullptr;
   ComPtr<ID3D12Resource> IndexBufferUploader  = nullptr;

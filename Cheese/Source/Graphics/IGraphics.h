@@ -13,21 +13,6 @@
 #pragma comment(lib, "D3D12.lib")
 #pragma comment(lib, "dxgi.lib")
 
-struct Material {
-  DirectX::XMFLOAT4 diffuseAlbedo;
-  DirectX::XMFLOAT3 fresnelR0;
-  float roughness;
-};
-
-struct Light {
-  DirectX::XMFLOAT3 strength;
-  float falloffStart;
-  DirectX::XMFLOAT3 direction;
-  float falloffEnd;
-  DirectX::XMFLOAT3 position;
-  float SpotPower;
-};
-
 class Graphics
 {
  public:

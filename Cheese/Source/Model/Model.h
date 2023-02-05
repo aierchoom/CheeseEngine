@@ -1,32 +1,39 @@
 #ifndef MODEL_MODEL_H
 #define MODEL_MODEL_H
-#include <vector>
-#include <d3d12.h>
-#include <DirectXMath.h>
-
 #include "Common/TypeDef.h"
-#include "Vertex.h"
-using namespace DirectX;
 
-struct MeshData {
-  std::vector<VertexPosNormalTangentTex> vertexVec;
-  std::vector<uint16> indexVec;
-};
+#include <vector>
+#include <memory>
+#include <d3d12.h>
 
-// 设计作为模型总类的接口，与d3d12进行对接，暴露资源给d3d12。
+#include "Math/Transform.h"
+#include "Shader/ShaderInfo.h"
+#include "Mesh.h"
+
 class Model
 {
  public:
-  Model() = default;
+  Model() : mMeshes(), mShaderInfo(), mMatDesc() {}
+  ~Model() {}
 
-  virtual ID3D12Resource* GetVertexBufferGPU() = 0;
-  virtual ID3D12Resource* GetIndexBufferGPU()  = 0;
+  inline void AddMesh(IMesh *mesh) { mMeshes.push_back(mesh); }
+  inline std::vector<IMesh *> &GetMeshes() { return mMeshes; }
 
- protected:
-  ComPtr<ID3DBlob> mVertexBufferCPU;
-  ComPtr<ID3DBlob> mIndexBufferCPU;
+  inline void CreateShaderInfo(ID3D12Device *device, const ShaderSettings &settings) { mShaderInfo.Create(device, settings); }
+  inline ShaderInfo &GetShaderInfo() { return mShaderInfo; }
 
-  ComPtr<ID3D12Resource> mVertexBufferGPU;
-  ComPtr<ID3D12Resource> mIndexBufferGPU;
+  inline const MaterialDesc &GetMaterialDesc() const { return mMatDesc; }
+  inline void SetMaterialDesc(const MaterialDesc &matDesc) { mMatDesc = matDesc; }
+
+  inline void SetPosition(float x, float y, float z) { mTransform.SetPosition(x, y, z); }
+  inline DirectX::XMMATRIX GetTransformMatrix() const { return mTransform.GetLocalToWorldMatrixXM(); }
+
+ private:
+  std::vector<IMesh *> mMeshes;
+  ShaderInfo mShaderInfo;
+
+  MaterialDesc mMatDesc;
+
+  Transform mTransform;
 };
 #endif  // MODEL_MODEL_H

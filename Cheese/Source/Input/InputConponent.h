@@ -9,12 +9,6 @@
 #include <windows.h>
 #include "Core/Delegate.hpp"
 
-class IEvent
-{
- public:
-  virtual void OnResize(uint32 width, uint32 height) {}
-};
-
 class InputComponent
 {
  public:

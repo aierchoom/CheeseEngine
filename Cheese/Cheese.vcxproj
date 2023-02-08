@@ -134,6 +134,7 @@
   <ItemGroup>
     <ClCompile Include="Source\Core\Camera.cc" />
     <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp" />
+    <ClCompile Include="Source\Graphics\ShadowMap.cc" />
     <ClCompile Include="Source\Shader\Shader.cc" />
     <ClCompile Include="Source\Model\Geometry.cc" />
     <ClCompile Include="Source\Model\Mesh.cc" />
@@ -154,6 +155,7 @@
   <ItemGroup>
     <ClInclude Include="Source\Core\Camera.h" />
     <ClInclude Include="Source\Graphics\DDSTextureLoader.h" />
+    <ClInclude Include="Source\Graphics\ShadowMap.h" />
     <ClInclude Include="Source\Shader\Shader.h" />
     <ClInclude Include="Source\Model\Geometry.h" />
     <ClInclude Include="Source\Model\Mesh.h" />

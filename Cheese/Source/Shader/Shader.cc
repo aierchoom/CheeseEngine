@@ -9,23 +9,23 @@ void Shader::AddShader(const CheString& fileName, ShaderType type)
 {
   switch (type) {
     case ShaderType::VERTEX_SHADER:
-      AddVS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("VS"), CTEXT("vs_5_0")).Get());
+      AddVS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("VS"), CTEXT("vs_5_1")).Get());
       GenerateShaderSettings(mVsByteCode.Get());
       break;
     case ShaderType::HULL_SHADER:
-      AddHS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("HS"), CTEXT("hs_5_0")).Get());
+      AddHS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("HS"), CTEXT("hs_5_1")).Get());
       GenerateShaderSettings(mHsByteCode.Get());
       break;
     case ShaderType::DOMAIN_SHADER:
-      AddDS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("DS"), CTEXT("ds_5_0")).Get());
+      AddDS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("DS"), CTEXT("ds_5_1")).Get());
       GenerateShaderSettings(mDsByteCode.Get());
       break;
     case ShaderType::GEOMETRY_SHADER:
-      AddHS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("GS"), CTEXT("hs_5_0")).Get());
+      AddHS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("GS"), CTEXT("hs_5_1")).Get());
       GenerateShaderSettings(mGsByteCode.Get());
       break;
     case ShaderType::PIXEL_SHADER:
-      AddPS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("PS"), CTEXT("ps_5_0")).Get());
+      AddPS(D3DUtil::CompileShader(fileName, nullptr, CTEXT("PS"), CTEXT("ps_5_1")).Get());
       GenerateShaderSettings(mPsByteCode.Get());
       break;
   }
@@ -128,7 +128,7 @@ void Shader::CreateRootSignature(ID3D12Device* device)
                                    IID_PPV_ARGS(mRootSignature.GetAddressOf())));
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> Shader::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> Shader::GetStaticSamplers()
 {
   const CD3DX12_STATIC_SAMPLER_DESC pointWrap(0,                                 // shaderRegister
                                               D3D12_FILTER_MIN_MAG_MIP_POINT,    // filter
@@ -162,13 +162,21 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> Shader::GetStaticSamplers()
                                                     0.0f,                             // mipLODBias
                                                     8);                               // maxAnisotropy
 
-  const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(5,                                 // shaderRegister
-                                                     D3D12_FILTER_ANISOTROPIC,          // filter
-                                                     D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
-                                                     D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
-                                                     D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressW
-                                                     0.0f,                              // mipLODBias
-                                                     8);                                // maxAnisotropy
+  const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(5,                                       // shaderRegister
+                                                     D3D12_FILTER_ANISOTROPIC,                // filter
+                                                     D3D12_TEXTURE_ADDRESS_MODE_CLAMP,        // addressU
+                                                     D3D12_TEXTURE_ADDRESS_MODE_CLAMP,        // addressV
+                                                     D3D12_TEXTURE_ADDRESS_MODE_CLAMP,        // addressW
+                                                     0.0f,                                    // mipLODBias
+                                                     8);                                      // maxAnisotropy
+  const CD3DX12_STATIC_SAMPLER_DESC shadow(6,                                                 // shaderRegister
+                                           D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT,  // filter
+                                           D3D12_TEXTURE_ADDRESS_MODE_BORDER,                 // addressU
+                                           D3D12_TEXTURE_ADDRESS_MODE_BORDER,                 // addressV
+                                           D3D12_TEXTURE_ADDRESS_MODE_BORDER,                 // addressW
+                                           0.0f,                                              // mipLODBias
+                                           16,                                                // maxAnisotropy
+                                           D3D12_COMPARISON_FUNC_LESS_EQUAL, D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);
 
-  return {pointWrap, pointClamp, linearWrap, linearClamp, anisotropicWrap, anisotropicClamp};
+  return {pointWrap, pointClamp, linearWrap, linearClamp, anisotropicWrap, anisotropicClamp, shadow};
 }

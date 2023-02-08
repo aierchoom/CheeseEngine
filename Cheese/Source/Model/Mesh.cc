@@ -33,7 +33,7 @@ void IMesh::CreateGPUResource(ID3D12Device* device, ID3D12GraphicsCommandList* c
   mVertexBufferGPU = D3DUtil::CreateDefaultBuffer(device, cmdList, mVertices.data(), vbByteSize, mVertexBufferUploader);
 
   D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-  srvHeapDesc.NumDescriptors             = srvSettings.size();
+  srvHeapDesc.NumDescriptors             = 3;
   srvHeapDesc.Type                       = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
   srvHeapDesc.Flags                      = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
   TIFF(device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));

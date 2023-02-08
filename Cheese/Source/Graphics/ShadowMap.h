@@ -22,13 +22,10 @@ class ShadowMap
   D3D12_VIEWPORT GetViewport() const;
   D3D12_RECT GetScissorRect() const;
 
-  void BuildDescriptors(CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv, CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv,
-                        CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDsv);
-
   void OnResize(uint32 width, uint32 height);
+  void BuildDescriptors(CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle);
 
  private:
-  void BuildDescriptors();
   void BuildResource();
 
  private:
@@ -41,9 +38,8 @@ class ShadowMap
   uint32 mHeight      = 0;
   DXGI_FORMAT mFormat = DXGI_FORMAT_R24G8_TYPELESS;
 
-  CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuSrv;
-  CD3DX12_GPU_DESCRIPTOR_HANDLE mhGpuSrv;
-  CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuDsv;
+  ComPtr<ID3D12DescriptorHeap> mSrv;
+  ComPtr<ID3D12DescriptorHeap> mDsv;
 
   ComPtr<ID3D12Resource> mShadowMap = nullptr;
 };

@@ -76,6 +76,9 @@ ComPtr<ID3DBlob> D3DUtil::CompileShader(const CheString& fileName, const D3D_SHA
                                         const CheString& target)
 {
   UINT compileFlags = 0;
+#if defined(DEBUG) || defined(_DEBUG)
+  compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
 
   HRESULT hr = S_OK;
 

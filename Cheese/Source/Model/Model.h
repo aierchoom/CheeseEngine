@@ -13,14 +13,20 @@
 class Model
 {
  public:
-  Model() : mMeshes(), mShaderInfo(), mMatDesc() {}
+  Model() : mMeshes(), mShaderInfos(), mMatDesc() {}
   ~Model() {}
 
   inline void AddMesh(IMesh *mesh) { mMeshes.push_back(mesh); }
   inline std::vector<IMesh *> &GetMeshes() { return mMeshes; }
 
-  inline void CreateShaderInfo(ID3D12Device *device, const ShaderSettings &settings) { mShaderInfo.Create(device, settings); }
-  inline ShaderInfo &GetShaderInfo() { return mShaderInfo; }
+  inline void AddShaderInfo(const CheString &infoName, const ShaderSettings &settings, ID3D12Device *device)
+  {
+    if (mShaderInfos.find(infoName) == mShaderInfos.end()) {
+      mShaderInfos[infoName].Create(device, settings);
+    }
+  }
+
+  inline ShaderInfo &GetShaderInfo(const CheString &infoName) { return mShaderInfos[infoName]; }
 
   inline const MaterialDesc &GetMaterialDesc() const { return mMatDesc; }
   inline void SetMaterialDesc(const MaterialDesc &matDesc) { mMatDesc = matDesc; }
@@ -30,7 +36,8 @@ class Model
 
  private:
   std::vector<IMesh *> mMeshes;
-  ShaderInfo mShaderInfo;
+
+  std::unordered_map<CheString, ShaderInfo> mShaderInfos;
 
   MaterialDesc mMatDesc;
 

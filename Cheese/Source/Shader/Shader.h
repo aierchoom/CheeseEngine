@@ -42,7 +42,7 @@ class Shader
   void GenerateShaderSettings(ID3DBlob* shader);
   void GenerateCBSettings(D3D12_SHADER_INPUT_BIND_DESC bindDesc, ID3D12ShaderReflectionConstantBuffer* cbReflection);
 
-  std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
+  std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> GetStaticSamplers();
 
  private:
   ComPtr<ID3DBlob> mVsByteCode = nullptr;

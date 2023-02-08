@@ -135,7 +135,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Source\RenderExample.cc" />
-    <ClCompile Include="Source\ShadowMap.cc" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\color.hlsl">
@@ -143,9 +142,6 @@
     </None>
     <None Include="Shaders\DefaultSampler.hlsli" />
     <None Include="Shaders\LightingUtil.hlsli" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Source\ShadowMap.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Shadow\Shadow.hlsl">

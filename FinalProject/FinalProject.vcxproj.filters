@@ -13,9 +13,6 @@
     <ClCompile Include="Source\RenderExample.cc">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="Source\ShadowMap.cc">
-      <Filter>Source</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\color.hlsl">
@@ -29,8 +26,5 @@
     </None>
     <None Include="Shaders\Shadow\Shadow.hlsl" />
     <None Include="Shaders\Skybox\Skybox.hlsl" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Source\ShadowMap.h" />
   </ItemGroup>
 </Project>

@@ -93,6 +93,7 @@
     <ClCompile Include="Source\Shader\Shader.cc">
       <Filter>Shader</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Graphics\ShadowMap.cc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\CheeseApp.h">
@@ -167,5 +168,6 @@
     <ClInclude Include="Source\Shader\Shader.h">
       <Filter>Shader</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Graphics\ShadowMap.h" />
   </ItemGroup>
 </Project>

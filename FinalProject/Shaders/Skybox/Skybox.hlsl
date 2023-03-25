@@ -1,17 +1,12 @@
-SamplerState gsamPointWrap : register(s0);
-SamplerState gsamPointClamp : register(s1);
-SamplerState gsamLinearWrap : register(s2);
-SamplerState gsamLinearClamp : register(s3);
-SamplerState gsamAnisotropicWrap : register(s4);
-SamplerState gsamAnisotropicClamp : register(s5);
-SamplerComparisonState gsamShadow : register(s6);
+#include "../Basic.hlsli"
 
 TextureCube gCubeMap : register(t0);
 
-cbuffer cbPerObject : register(b0)
+cbuffer cbPerObject : register(b0) { float4x4 gWorld; };
+
+cbuffer cbPass : register(b1)
 {
-  float4x4 gWorld;
-  float4x4 gViewProj;
+  matrix gViewProj;
   float3 gEyePosW;
 };
 
@@ -42,4 +37,4 @@ VertexOut VS(VertexIn vin)
   return vout;
 }
 
-float4 PS(VertexOut pin) : SV_Target { return gCubeMap.Sample(gsamLinearWrap, pin.PosL); }
+float4 PS(VertexOut pin) : SV_Target { return gCubeMap.Sample(gLinearWrap, pin.PosL); }

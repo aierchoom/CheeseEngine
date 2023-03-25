@@ -6,7 +6,7 @@
 #include <d3dcompiler.h>
 #include "d3dx12.h"
 #include "ShaderHelper.h"
-#include "ShaderInfo.h"
+#include "ConstantBuffer.h"
 
 enum class ShaderType : uint8 {
   VERTEX_SHADER   = 0,
@@ -19,7 +19,7 @@ enum class ShaderType : uint8 {
 class Shader
 {
  public:
-  Shader() {}
+  Shader(const CheString& name) : mName(name) {}
   void AddShader(const CheString& fileName, ShaderType type);
   ShaderSettings GetSettings() const { return mSettings; }
 
@@ -29,8 +29,12 @@ class Shader
   ID3DBlob* GetHS() const { return mHsByteCode.Get(); }
   ID3DBlob* GetDS() const { return mDsByteCode.Get(); }
 
+  const CheString& GetName() const { return mName; }
+
   void CreateRootSignature(ID3D12Device* device);
+  void BuildPassCBuffer(ID3D12Device* device);
   inline ID3D12RootSignature* GetRootSignature() const { return mRootSignature.Get(); }
+  inline CBufferManager& GetCBufferManager() { return mCBManager; }
 
  private:
   void AddVS(ID3DBlob* shaderByteCode);
@@ -51,9 +55,11 @@ class Shader
   ComPtr<ID3DBlob> mHsByteCode = nullptr;
   ComPtr<ID3DBlob> mDsByteCode = nullptr;
 
+  CheString mName;
   ShaderSettings mSettings;
 
   ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
+  CBufferManager mCBManager;
 };
 
 #endif  // GRAPHICS_SHADER_H

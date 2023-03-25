@@ -1,14 +1,16 @@
 #ifndef MODEL_MESH_H
 #define MODEL_MESH_H
-#include "Common/TypeDef.h"
-
-#include <vector>
-#include <unordered_map>
-#include <d3d12.h>
 #include <DirectXMath.h>
+#include <d3d12.h>
+#include <d3dx12.h>
+
+#include <unordered_map>
+#include <vector>
+
+#include "Common/TypeDef.h"
+#include "Model/Texture2D.h"
 #include "Shader/ShaderHelper.h"
 #include "Utils/Log/Logger.h"
-#include "Model/Texture2D.h"
 
 struct Vertex {
   DirectX::XMFLOAT3 Position;
@@ -22,10 +24,6 @@ struct Material {
   std::unordered_map<CheString, Texture2D> Textures;
 };
 
-// Key points of design
-// 1.Mesh要存储所有的GPU资源
-// 2.思考是否应该存储CPU资源
-// 3.尽量保持操作一致性原则
 class IMesh
 {
  public:
@@ -36,38 +34,24 @@ class IMesh
 
   inline Material GetMaterial() const { return mMaterial; }
   inline void SetMaterial(const Material& material) { mMaterial = material; }
+  inline bool GetBlend() const { return mIsBlend; }
+  inline void SetBlend(bool isBlend) { mIsBlend = isBlend; }
 
-  inline uint32 GetVertexByteSize() const { return mVertices.size() * sizeof(Vertex); }
+  inline const Byte* GetVertexByteData() const { return reinterpret_cast<const Byte*>(mVertices.data()); }
+  inline uint32 GetVertexCount() const { return static_cast<uint32>(mVertices.size()); }
+  inline uint32 GetVertexByteSize() const { return static_cast<uint32>(mVertices.size() * sizeof(Vertex)); }
 
+  inline virtual Byte* GetIndexByteData() const     = 0;
   inline virtual uint32 GetIndexCount() const       = 0;
   inline virtual uint32 GetIndexByteSize() const    = 0;
   inline virtual DXGI_FORMAT GetIndexFormat() const = 0;
 
-  void CreateGPUResource(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
-                         const std::unordered_map<CheString, SRVInfo>& srvSettings);
-
-  ID3D12DescriptorHeap* GetSrvDescriptor() const { return mSrvDescriptorHeap.Get(); }
-
-  D3D12_INDEX_BUFFER_VIEW GetIndexBufferView() const;
-  D3D12_VERTEX_BUFFER_VIEW GetVertexBufferView() const;
-
  protected:
-  inline virtual Byte* GetIndexByteData() const = 0;
-
- protected:
-  ComPtr<ID3DBlob> mIndexBufferCPU       = nullptr;
-  ComPtr<ID3D12Resource> mIndexBufferGPU = nullptr;
-
   std::vector<Vertex> mVertices;
-  ComPtr<ID3DBlob> mVertexBufferCPU       = nullptr;
-  ComPtr<ID3D12Resource> mVertexBufferGPU = nullptr;
-
-  ComPtr<ID3D12Resource> mIndexBufferUploader  = nullptr;
-  ComPtr<ID3D12Resource> mVertexBufferUploader = nullptr;
-
-  ComPtr<ID3D12DescriptorHeap> mSrvDescriptorHeap = nullptr;
 
   Material mMaterial;
+
+  bool mIsBlend = false;
 };
 
 // The Mesh class supports different index lengths.
@@ -77,12 +61,9 @@ class Mesh : public IMesh
  public:
   Mesh() : IMesh(), mIndices(0) {}
   Mesh(const std::vector<Vertex>& vertices, const std::vector<IndexType>& indices) : IMesh(vertices), mIndices(indices) {}
-  Mesh(std::vector<Vertex>&& vertices, std::vector<IndexType>&& indices)
-      : IMesh(std::move(vertices)), mIndices(std::move(indices))
-  {
-  }
+  Mesh(std::vector<Vertex>&& vertices, std::vector<IndexType>&& indices) : IMesh(std::move(vertices)), mIndices(std::move(indices)) {}
 
-  inline virtual uint32 GetIndexCount() const override { return mIndices.size(); }
+  inline virtual uint32 GetIndexCount() const override { return static_cast<uint32>(mIndices.size()); }
   inline virtual Byte* GetIndexByteData() const override { return (Byte*)mIndices.data(); }
   inline virtual DXGI_FORMAT GetIndexFormat() const override
   {
@@ -94,7 +75,7 @@ class Mesh : public IMesh
   }
 
  private:
-  inline virtual uint32 GetIndexByteSize() const override { return mIndices.size() * sizeof(IndexType); }
+  inline virtual uint32 GetIndexByteSize() const override { return static_cast<uint32>(mIndices.size() * sizeof(IndexType)); }
 
  private:
   std::vector<IndexType> mIndices;

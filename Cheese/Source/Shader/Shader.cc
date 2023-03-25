@@ -1,5 +1,7 @@
 #include "Shader.h"
+
 #include <vector>
+
 #include "Graphics/D3DUtil.h"
 #include "Utils/Log/Logger.h"
 
@@ -49,7 +51,7 @@ void Shader::GenerateShaderSettings(ID3DBlob* shader)
 
   D3D12_SHADER_DESC shaderDesc;
   shaderReflection->GetDesc(&shaderDesc);
-  ShaderFlag shaderFlag = static_cast<ShaderFlag>(1 << D3D12_SHVER_GET_TYPE(shaderDesc.Version));
+  ShaderType shaderType = static_cast<ShaderType>(1 << D3D12_SHVER_GET_TYPE(shaderDesc.Version));
 
   for (uint32 i = 0;; ++i) {
     D3D12_SHADER_INPUT_BIND_DESC shaderInputDesc;
@@ -112,13 +114,13 @@ void Shader::CreateRootSignature(ID3D12Device* device)
 
   auto staticSampler = GetStaticSamplers();
 
-  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(slotRootParameter.size(), slotRootParameter.data(), staticSampler.size(),
-                                          staticSampler.data(), D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(static_cast<UINT>(slotRootParameter.size()), slotRootParameter.data(),
+                                          static_cast<UINT>(staticSampler.size()), staticSampler.data(),
+                                          D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
   ComPtr<ID3DBlob> serializedRootSig = nullptr;
   ComPtr<ID3DBlob> errorBlob         = nullptr;
-  TIFF(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(),
-                                   errorBlob.GetAddressOf()));
+  TIFF(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf()));
 
   if (errorBlob != nullptr) {
     logger.Error(ConvertToCheString((char*)errorBlob->GetBufferPointer()));
@@ -126,6 +128,18 @@ void Shader::CreateRootSignature(ID3D12Device* device)
 
   TIFF(device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(),
                                    IID_PPV_ARGS(mRootSignature.GetAddressOf())));
+}
+
+void Shader::BuildPassCBuffer(ID3D12Device* device)
+{
+  for (auto pair : mSettings.GetCBSetting()) {
+    auto cbName = pair.first;
+    auto cbInfo = pair.second;
+    // Shader just save tag:PASS data.
+    if (CBufferManager::CBufferConfig[cbName] == CBufferType::PASS) {
+      mCBManager.AddCBuffer(device, cbName, cbInfo);
+    }
+  }
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> Shader::GetStaticSamplers()

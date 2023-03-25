@@ -147,6 +147,10 @@ D3D12_CPU_DESCRIPTOR_HANDLE Graphics::DepthStencilView() const { return mDsvHeap
 
 void Graphics::OnResize(CheeseWindow* window)
 {
+  if(window->GetWidth()==0&&window->GetHeight()==0){
+    return;
+  }
+
   assert(mD3dDevice);
   assert(mSwapChain);
   assert(mDirectCmdListAlloc);

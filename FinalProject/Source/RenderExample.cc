@@ -12,9 +12,12 @@
 #include <Utils/Log/Logger.h>
 #include <Input/InputConponent.h>
 #include <Graphics/IGraphics.h>
+#include <Graphics/D3DUtil.h>
+#include <Graphics/RenderData.h>
 #include <Graphics/ShadowMap.h>
-#include <Graphics/DDSTextureLoader.h>
 #include <Shader/Shader.h>
+#include <Shader/ShaderResource.h>
+#include <Model/ModelLoader.h>
 #include <Model/Model.h>
 #include <Model/Geometry.h>
 
@@ -36,7 +39,7 @@ XMFLOAT4X4 Identity4x4()
 class RenderExample : public CheeseApp
 {
  public:
-  RenderExample() : mWindow(new CheeseWindow(1280, 720)), mGraphics(new Graphics()), models(), mSkybox(), mLight() {}
+  RenderExample() : mWindow(new CheeseWindow(1280, 720)), mGraphics(new Graphics()), mLight() {}
 
   virtual ~RenderExample() {}
 
@@ -72,7 +75,7 @@ class RenderExample : public CheeseApp
   virtual void Run() override;
   virtual void Update(float dt) override;
   void Draw();
-  void DrawScene();
+  void DrawRenderItem(RenderData& renderData, Shader* shader, bool drawBlend = false);
 
   void BuildPSO();
 
@@ -89,26 +92,22 @@ class RenderExample : public CheeseApp
   Graphics* mGraphics;
 
   unique_ptr<ShadowMap> mShadowMap;
-  BoundingSphere mSceneBounds;
 
-  Shader mBoxShader;
-  Shader mSkyboxShader;
-  Shader mShadowShader;
+  Shader* mPBRShader;
+  Shader* mSkyboxShader;
+  Shader* mShadowShader;
 
   unordered_map<CheString, ComPtr<ID3D12PipelineState>> mPSOs;
 
-  XMFLOAT4X4 mWorld = Identity4x4();
-  XMFLOAT4X4 mView  = Identity4x4();
-  XMFLOAT4X4 mProj  = Identity4x4();
+  BoundingSphere mSceneBounds;
 
   float mTheta  = 1.5f * XM_PI;
   float mPhi    = XM_PIDIV4;
   float mRadius = 5.0f;
 
-  Model mSkybox;
-
-  std::vector<Model*> models;
-  Light mLight;
+  RenderData* mRenderData;
+  RenderData* mSkyboxRenderData;
+  PointLight mLight;
 
   bool mIsMovingMouse = false;
 };
@@ -139,6 +138,8 @@ void RenderExample::OnResize(uint32 width, uint32 height)
   mGraphics->OnResize(mWindow);
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
   mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
+
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetLocalToWorldMatrixXM()));
 }
 
 bool RenderExample::Load()
@@ -146,88 +147,113 @@ bool RenderExample::Load()
   mGraphics->ResetCommandList();
 
   logger.Info(CTEXT("Build Shader..."));
-  // mBoxShader.AddShader(CTEXT("Shaders/color.hlsl"), ShaderType::VERTEX_SHADER);
-  // mBoxShader.AddShader(CTEXT("Shaders/color.hlsl"), ShaderType::PIXEL_SHADER);
-  mBoxShader.AddShader(CTEXT("Shaders/SHD/Default.hlsl"), ShaderType::VERTEX_SHADER);
-  mBoxShader.AddShader(CTEXT("Shaders/SHD/Default.hlsl"), ShaderType::PIXEL_SHADER);
-  mBoxShader.CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mPBRShader = new Shader(CTEXT("PBRShader"));
+  mPBRShader->AddShader(CTEXT("Shaders/PBR/PBR.hlsl"), ShaderType::VERTEX_SHADER);
+  mPBRShader->AddShader(CTEXT("Shaders/PBR/PBR.hlsl"), ShaderType::PIXEL_SHADER);
+  mPBRShader->CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mPBRShader->BuildPassCBuffer(mGraphics->mD3dDevice.Get());
 
   logger.Info(CTEXT("Build skybox shader..."));
-  mSkyboxShader.AddShader(CTEXT("Shaders/Skybox/Skybox.hlsl"), ShaderType::VERTEX_SHADER);
-  mSkyboxShader.AddShader(CTEXT("Shaders/Skybox/Skybox.hlsl"), ShaderType::PIXEL_SHADER);
-  mSkyboxShader.CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mSkyboxShader = new Shader(CTEXT("SkyboxShader"));
+  mSkyboxShader->AddShader(CTEXT("Shaders/Skybox/Skybox.hlsl"), ShaderType::VERTEX_SHADER);
+  mSkyboxShader->AddShader(CTEXT("Shaders/Skybox/Skybox.hlsl"), ShaderType::PIXEL_SHADER);
+  mSkyboxShader->CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mSkyboxShader->BuildPassCBuffer(mGraphics->mD3dDevice.Get());
 
   logger.Info(CTEXT("Build shadow shader..."));
-  mShadowShader.AddShader(CTEXT("Shaders/Shadow/Shadow.hlsl"), ShaderType::VERTEX_SHADER);
-  mShadowShader.AddShader(CTEXT("Shaders/Shadow/Shadow.hlsl"), ShaderType::PIXEL_SHADER);
-  mShadowShader.CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mShadowShader = new Shader(CTEXT("ShadowShader"));
+  mShadowShader->AddShader(CTEXT("Shaders/Shadow/Shadow.hlsl"), ShaderType::VERTEX_SHADER);
+  mShadowShader->AddShader(CTEXT("Shaders/Shadow/Shadow.hlsl"), ShaderType::PIXEL_SHADER);
+  mShadowShader->CreateRootSignature(mGraphics->mD3dDevice.Get());
+  mShadowShader->BuildPassCBuffer(mGraphics->mD3dDevice.Get());
+
+  mSkyboxRenderData = new RenderData(mGraphics->mD3dDevice, mGraphics->mCommandList);
+  mRenderData       = new RenderData(mGraphics->mD3dDevice, mGraphics->mCommandList);
+  mSkyboxRenderData->AddShader(mSkyboxShader);
+  mRenderData->AddShader(mPBRShader);
+  mRenderData->AddShader(mShadowShader);
 
   IMesh* skyboxMesh = Geometry::GenerateBox(1, 1, 1);
-
   Material skyboxMat;
-  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                  CTEXT("Resource/Texture/grasscube1024.dds"), skyboxMat.Textures[CTEXT("gCubeMap")].Resource,
-                                  skyboxMat.Textures[CTEXT("gCubeMap")].ResourceUpload));
+  TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
+                                       CTEXT("Resource/Texture/grasscube1024.dds"), skyboxMat.Textures[CTEXT("gCubeMap")],
+                                       D3D12_SRV_DIMENSION_TEXTURECUBE));
   skyboxMesh->SetMaterial(skyboxMat);
-  skyboxMesh->CreateGPUResource(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                mSkyboxShader.GetSettings().GetSRVSetting());
+  Model* skybox = new Model();
+  skybox->AddMesh(skyboxMesh);
+  mSkyboxRenderData->AddRenderItem(CTEXT("Skybox"), skybox);
+  mSkyboxRenderData->BuildRenderData();
 
-  mSkybox.AddMesh(skyboxMesh);
-  mSkybox.AddShaderInfo(CTEXT("skybox"), mSkyboxShader.GetSettings(), mGraphics->mD3dDevice.Get());
+  XMMATRIX world = XMLoadFloat4x4(&Identity4x4());
+  mSkyboxRenderData->GetItem(CTEXT("Skybox"))
+      .GetPerObjectCBuffer(mSkyboxShader->GetName())
+      .SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
 
-  IMesh* boxMesh = Geometry::GenerateBox(1, 1, 1);
-  Material boxMaterial;
-  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                  CTEXT("Resource/Texture/bricks.dds"), boxMaterial.Textures[CTEXT("gAlbedoMap")].Resource,
-                                  boxMaterial.Textures[CTEXT("gAlbedoMap")].ResourceUpload));
-
-  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                  CTEXT("Resource/Texture/bricks_nmap.dds"), boxMaterial.Textures[CTEXT("gNormalMap")].Resource,
-                                  boxMaterial.Textures[CTEXT("gNormalMap")].ResourceUpload));
-
-  boxMesh->SetMaterial(boxMaterial);
-  boxMesh->CreateGPUResource(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                             mBoxShader.GetSettings().GetSRVSetting());
-  Model* box = new Model();
-  models.push_back(box);
-  box->AddMesh(boxMesh);
-  box->SetPosition(0.0f, 0.5f, 0.0f);
-
-  IMesh* planeMesh = Geometry::GeneratePlane(10.0f, 10.0f);
-
+  IMesh* planeMesh = Geometry::GeneratePlane(5.0f, 5.0f);
   Material planeMaterial;
-  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                  CTEXT("Resource/Texture/tile.dds"), planeMaterial.Textures[CTEXT("gAlbedoMap")].Resource,
-                                  planeMaterial.Textures[CTEXT("gAlbedoMap")].ResourceUpload));
+  TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Texture/tile.dds"),
+                                       planeMaterial.Textures[CTEXT("gAlbedoMap")]));
 
-  TIFF(CreateDDSTextureFromFile12(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                  CTEXT("Resource/Texture/tile_nmap.dds"), planeMaterial.Textures[CTEXT("gNormalMap")].Resource,
-                                  planeMaterial.Textures[CTEXT("gNormalMap")].ResourceUpload));
+  TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Texture/tile_nmap.dds"),
+                                       planeMaterial.Textures[CTEXT("gNormalMap")]));
+
   planeMesh->SetMaterial(planeMaterial);
-  planeMesh->CreateGPUResource(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                               mBoxShader.GetSettings().GetSRVSetting());
 
   Model* plane = new Model();
-  models.push_back(plane);
   plane->AddMesh(planeMesh);
-  plane->SetPosition(0.0f, 0.0f, 0.0f);
+  mRenderData->AddRenderItem(CTEXT("Plane"), plane);
 
-  MaterialDesc matDesc;
-  matDesc.DiffuseAlbedo = {0.7f, 0.7f, 0.7f, 1.0f};
-  matDesc.FresnelR0     = {0.04f, 0.04f, 0.04f};
-  matDesc.Roughness     = 0.6f;
+  Model* flightHelmet = new Model();
+  Model* boomBox      = new Model();
+  ModelLoader::LoadGLTF(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Model/FlightHelmet/FlightHelmet.gltf"),
+                        *flightHelmet);
+  ModelLoader::LoadGLTF(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Model/BoomBox/BoomBox.gltf"), *boomBox);
 
-  for (auto model : models) {
-    model->AddShaderInfo(CTEXT("pbr"), mBoxShader.GetSettings(), mGraphics->mD3dDevice.Get());
-    model->AddShaderInfo(CTEXT("shadow"), mShadowShader.GetSettings(), mGraphics->mD3dDevice.Get());
-    model->SetMaterialDesc(matDesc);
+  mRenderData->AddRenderItem(CTEXT("FlightHelmet"), flightHelmet);
+  mRenderData->AddRenderItem(CTEXT("BoomBox"), boomBox);
+
+  mRenderData->BuildRenderData();
+  mShadowMap->CreateShadowMapSrv(mRenderData->GetShadowMapHandleCPU());
+
+  for (auto pair : mRenderData->GetRenderItems()) {
+    auto itemName = pair.first;
+    auto& ri      = mRenderData->GetItem(itemName);
+    ri.GetPerObjectCBuffer(mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
+    ri.GetPerObjectCBuffer(mShadowShader->GetName()).SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
   }
 
-  mLight.strength     = {1.0f, 1.0f, 1.0f};
+  MaterialDesc matDesc;
+  matDesc.DiffuseAlbedo = {1.0f, 1.0f, 1.0f, 1.0f};
+  matDesc.FresnelR0     = {0.0f, 0.0f, 0.0f};
+  matDesc.Roughness     = 0.3f;
+  mRenderData->GetItemPerObjectCB(CTEXT("Plane"), mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.gMatDesc"), matDesc);
+
+  matDesc.FresnelR0 = {0.16f, 0.16f, 0.16f};
+  mRenderData->GetItemPerObjectCB(CTEXT("FlightHelmet"), mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.gMatDesc"), matDesc);
+
+  mRenderData->GetItem(CTEXT("FlightHelmet")).SetPosition(1.0f, 0.0f, 0.0f);
+  mRenderData->GetItem(CTEXT("FlightHelmet")).SetScale(1.5f, 1.5f, 1.5f);
+  XMMATRIX trans = XMLoadFloat4x4(&Identity4x4());
+
+  mRenderData->GetItem(CTEXT("FlightHelmet"))
+      .GetPerObjectCBuffer(mPBRShader->GetName())
+      .SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(trans));
+
+  mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
+  mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mShadowShader->GetName(), CTEXT("cbPerObject.gWorld"));
+
+  matDesc.FresnelR0 = {0.16f, 0.16f, 0.16f};
+  mRenderData->GetItemPerObjectCB(CTEXT("BoomBox"), mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.gMatDesc"), matDesc);
+  mRenderData->GetItem(CTEXT("BoomBox")).SetPosition(-1.0f, 0.5f, 0.0f);
+  mRenderData->GetItem(CTEXT("BoomBox")).SetScale(30.0f, 30.0f, 30.0f);
+  mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
+  mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mShadowShader->GetName(), CTEXT("cbPerObject.gWorld"));
+
+  mLight.strength     = {3.0f, 3.0f, 3.0f};
   mLight.falloffStart = 1.0f;
   mLight.direction    = {0.6f, -0.6f, 0.0f};
   mLight.falloffEnd   = 10.0f;
-  mLight.position     = {0.0f, 2.0f, 0.2f};
+  mLight.position     = {0.0f, 1.5f, 0.2f};
   mLight.SpotPower    = 64.0f;
 
   BuildPSO();
@@ -239,34 +265,16 @@ bool RenderExample::Load()
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
   mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
 
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+
   mSceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
   mSceneBounds.Radius = sqrtf(10.0f * 10.0f + 15.0f * 15.0f);
-
-  mSkybox.GetShaderInfo(CTEXT("skybox"))
-      .SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(mSkybox.GetTransformMatrix()));
-  mSkybox.GetShaderInfo(CTEXT("skybox"))
-      .SetMatrix(CTEXT("cbPerObject.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
-
-  for (auto model : models) {
-    for (auto& mesh : model->GetMeshes()) {
-      mShadowMap->BuildDescriptors(CD3DX12_CPU_DESCRIPTOR_HANDLE(mesh->GetSrvDescriptor()->GetCPUDescriptorHandleForHeapStart(),
-                                                                 2, mGraphics->mCbvSrvUavDescriptorSize));
-    }
-    model->GetShaderInfo(CTEXT("pbr")).SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(model->GetTransformMatrix()));
-    model->GetShaderInfo(CTEXT("pbr"))
-        .SetMatrix(CTEXT("cbPerObject.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
-
-    model->GetShaderInfo(CTEXT("shadow"))
-        .SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(model->GetTransformMatrix()));
-  }
 
   return true;
 }
 
 void RenderExample::Draw()
 {
-  // Reuse the memroy associated with command recording.
-  // We can only reset when the associated command lists have finished execution on the GPU.
   TIFF(mGraphics->mDirectCmdListAlloc->Reset());
   TIFF(mGraphics->mCommandList->Reset(mGraphics->mDirectCmdListAlloc.Get(), mPSOs[CTEXT("StandardPSO")].Get()));
 
@@ -275,96 +283,48 @@ void RenderExample::Draw()
 
   // Change to DEPTH_WRITE.
   mGraphics->mCommandList->ResourceBarrier(
-      1, &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ,
-                                               D3D12_RESOURCE_STATE_DEPTH_WRITE));
-  mGraphics->mCommandList->SetGraphicsRootSignature(mShadowShader.GetRootSignature());
-
-  mGraphics->mCommandList->ClearDepthStencilView(mShadowMap->GetDsv(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f,
-                                                 0, 0, nullptr);
+      1,
+      &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+  mGraphics->mCommandList->ClearDepthStencilView(mShadowMap->GetDsv(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0,
+                                                 nullptr);
   mGraphics->mCommandList->OMSetRenderTargets(0, nullptr, false, &mShadowMap->GetDsv());
 
   mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("ShadowPSO")].Get());
-
-  for (auto model : models) {
-    for (auto& mesh : model->GetMeshes()) {
-      ID3D12DescriptorHeap* descriptorHeaps[] = {mesh->GetSrvDescriptor()};
-      mGraphics->mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-      D3D12_INDEX_BUFFER_VIEW iBufferView = mesh->GetIndexBufferView();
-      mGraphics->mCommandList->IASetIndexBuffer(&iBufferView);
-
-      D3D12_VERTEX_BUFFER_VIEW vBufferView = mesh->GetVertexBufferView();
-      mGraphics->mCommandList->IASetVertexBuffers(0, 1, &vBufferView);
-      mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-      for (const auto& pair : model->GetShaderInfo(CTEXT("shadow")).GetCBuffers()) {
-        auto cbuffer       = pair.second;
-        const auto& cbInfo = cbuffer.GetCBufferInfo();
-        mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbInfo.GetSlot(),
-                                                                   cbuffer.mUploadBuffer->GetGPUVirtualAddress());
-      }
-      mGraphics->mCommandList->DrawIndexedInstanced(static_cast<UINT>(mesh->GetIndexCount()), 1, 0, 0, 0);
-    }
-  }
+  DrawRenderItem(*mRenderData, mShadowShader);
 
   mGraphics->mCommandList->ResourceBarrier(
-      1, &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE,
-                                               D3D12_RESOURCE_STATE_GENERIC_READ));
-
-  // Indicate a state transition on the resource usage.
-  CD3DX12_RESOURCE_BARRIER backBufferBarrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-  mGraphics->mCommandList->ResourceBarrier(1, &backBufferBarrier);
+      1,
+      &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));
 
   mGraphics->mCommandList->RSSetViewports(1, &mGraphics->mScreenViewport);
   mGraphics->mCommandList->RSSetScissorRects(1, &mGraphics->mScissorRect);
 
+  CD3DX12_RESOURCE_BARRIER backBufferBarrier =
+      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  mGraphics->mCommandList->ResourceBarrier(1, &backBufferBarrier);
+
   // Clear the back buffer and depth buffer.
   mGraphics->mCommandList->ClearRenderTargetView(mGraphics->CurrentBackBufferView(), Colors::LightSteelBlue, 0, nullptr);
-  mGraphics->mCommandList->ClearDepthStencilView(mGraphics->DepthStencilView(),
-                                                 D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+  mGraphics->mCommandList->ClearDepthStencilView(mGraphics->DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0,
+                                                 nullptr);
 
   // Specify the buffers we are going to render to.
   D3D12_CPU_DESCRIPTOR_HANDLE currBackBufferView = mGraphics->CurrentBackBufferView();
   D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView   = mGraphics->DepthStencilView();
   mGraphics->mCommandList->OMSetRenderTargets(1, &currBackBufferView, true, &depthStencilView);
-  mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("StandardPSO")].Get());
 
-  DrawScene();
+  mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("StandardPSO")].Get());
+  DrawRenderItem(*mRenderData, mPBRShader);
 
   mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("SkyboxPSO")].Get());
-  mGraphics->mCommandList->SetGraphicsRootSignature(mSkyboxShader.GetRootSignature());
-  for (auto& mesh : mSkybox.GetMeshes()) {
-    ID3D12DescriptorHeap* descriptorHeaps[] = {mesh->GetSrvDescriptor()};
-    mGraphics->mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-    D3D12_INDEX_BUFFER_VIEW iBufferView = mesh->GetIndexBufferView();
-    mGraphics->mCommandList->IASetIndexBuffer(&iBufferView);
+  DrawRenderItem(*mSkyboxRenderData, mSkyboxShader);
 
-    D3D12_VERTEX_BUFFER_VIEW vBufferView = mesh->GetVertexBufferView();
-    mGraphics->mCommandList->IASetVertexBuffers(0, 1, &vBufferView);
-    mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    for (const auto& pair : mSkybox.GetShaderInfo(CTEXT("skybox")).GetCBuffers()) {
-      auto cbuffer       = pair.second;
-      const auto& cbInfo = cbuffer.GetCBufferInfo();
-      mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbInfo.GetSlot(),
-                                                                 cbuffer.mUploadBuffer->GetGPUVirtualAddress());
-    }
-
-    for (auto pair : mSkyboxShader.GetSettings().GetSRVSetting()) {
-      auto srvSetting = pair.second;
-      CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mesh->GetSrvDescriptor()->GetGPUDescriptorHandleForHeapStart());
-      tex.Offset(srvSetting.GetSlot(), mGraphics->mCbvSrvUavDescriptorSize);
-      // offset cbuffer paramter index.
-      uint32 slot = srvSetting.GetSlot() + mSkyboxShader.GetSettings().GetCBSettingCount();
-      mGraphics->mCommandList->SetGraphicsRootDescriptorTable(slot, tex);
-    }
-
-    mGraphics->mCommandList->DrawIndexedInstanced(static_cast<UINT>(mesh->GetIndexCount()), 1, 0, 0, 0);
-  }
+  mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("TransparentPSO")].Get());
+  DrawRenderItem(*mRenderData, mPBRShader, true);
 
   // Indicate a state tansition on the resource usage.
-  backBufferBarrier = CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                                           D3D12_RESOURCE_STATE_PRESENT);
+  backBufferBarrier =
+      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
   mGraphics->mCommandList->ResourceBarrier(1, &backBufferBarrier);
 
   mGraphics->ExecuteCommandList();
@@ -379,45 +339,66 @@ void RenderExample::Draw()
   mGraphics->FlushCommandQueue();
 }
 
-void RenderExample::DrawScene()
+void RenderExample::DrawRenderItem(RenderData& renderData, Shader* shader, bool drawBlend)
 {
-  mGraphics->mCommandList->SetGraphicsRootSignature(mBoxShader.GetRootSignature());
+  mGraphics->mCommandList->SetGraphicsRootSignature(shader->GetRootSignature());
 
-  for (auto model : models) {
-    for (auto& mesh : model->GetMeshes()) {
-      ID3D12DescriptorHeap* descriptorHeaps[] = {mesh->GetSrvDescriptor()};
-      mGraphics->mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-      D3D12_INDEX_BUFFER_VIEW iBufferView = mesh->GetIndexBufferView();
+  // Bind shader pass cbuffer.
+  for (const auto& pair : shader->GetCBufferManager().GetCBuffers()) {
+    auto cbuffer = pair.second;
+    auto cbInfo  = cbuffer.GetCBufferInfo();
+    mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbInfo.GetSlot(), cbuffer.GetResource()->GetGPUVirtualAddress());
+  }
+
+  for (auto pair : renderData.GetRenderItems()) {
+    auto itemName = pair.first;
+    auto& item    = renderData.GetRenderItems()[itemName];
+
+    ID3D12DescriptorHeap* descriptorHeaps[] = {renderData.GetSrvDescriptorHeap()};
+    mGraphics->mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+    for (const auto& pair : renderData.GetItemPerObjectCB(itemName, shader->GetName()).GetCBuffers()) {
+      auto cbuffer = pair.second;
+      auto cbInfo  = cbuffer.GetCBufferInfo();
+      mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbInfo.GetSlot(), cbuffer.GetResource()->GetGPUVirtualAddress());
+    }
+
+    D3D12_VERTEX_BUFFER_VIEW vBufferView = item.GetVertexBufferView();
+    mGraphics->mCommandList->IASetVertexBuffers(0, 1, &vBufferView);
+    mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    D3D12_INDEX_BUFFER_VIEW iBufferView16 = item.GetIndexBufferView16();
+    D3D12_INDEX_BUFFER_VIEW iBufferView32 = item.GetIndexBufferView32();
+
+    for (auto arg : item.GetDrawArgs()) {
+      if (arg.IsBlend != drawBlend) continue;
+      D3D12_INDEX_BUFFER_VIEW iBufferView(arg.IndexFormat == DXGI_FORMAT_R16_UINT ? iBufferView16 : iBufferView32);
       mGraphics->mCommandList->IASetIndexBuffer(&iBufferView);
 
-      D3D12_VERTEX_BUFFER_VIEW vBufferView = mesh->GetVertexBufferView();
-      mGraphics->mCommandList->IASetVertexBuffers(0, 1, &vBufferView);
-      mGraphics->mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-      for (const auto& pair : model->GetShaderInfo(CTEXT("pbr")).GetCBuffers()) {
-        auto cbuffer       = pair.second;
-        const auto& cbInfo = cbuffer.GetCBufferInfo();
-        mGraphics->mCommandList->SetGraphicsRootConstantBufferView(cbInfo.GetSlot(),
-                                                                   cbuffer.mUploadBuffer->GetGPUVirtualAddress());
-      }
-
-      for (auto pair : mBoxShader.GetSettings().GetSRVSetting()) {
+      for (auto pair : shader->GetSettings().GetSRVSetting()) {
         auto srvName    = pair.first;
         auto srvSetting = pair.second;
-        CD3DX12_GPU_DESCRIPTOR_HANDLE tex(mesh->GetSrvDescriptor()->GetGPUDescriptorHandleForHeapStart());
+
+        // offset cbuffer paramter index.
+        uint32 slot = srvSetting.GetSlot() + shader->GetSettings().GetCBSettingCount();
         if (srvName == CTEXT("gShadowMap")) {
-          mGraphics->mCommandList->SetGraphicsRootDescriptorTable(
-              srvSetting.GetSlot() + mBoxShader.GetSettings().GetCBSettingCount(),
-              tex.Offset(2, mGraphics->mCbvSrvUavDescriptorSize));
+          mGraphics->mCommandList->SetGraphicsRootDescriptorTable(slot, mRenderData->GetShadowMapHandleGPU());
           continue;
         }
-        tex.Offset(srvSetting.GetSlot(), mGraphics->mCbvSrvUavDescriptorSize);
-        // offset cbuffer paramter index.
-        mGraphics->mCommandList->SetGraphicsRootDescriptorTable(
-            srvSetting.GetSlot() + mBoxShader.GetSettings().GetCBSettingCount(), tex);
+
+        // Default bind null srv.
+        uint32 srvIndex = mRenderData->GetNullSrvIndex();
+
+        if (arg.DrawSrvs.find(srvName) != arg.DrawSrvs.end()) {
+          srvIndex = arg.DrawSrvs[srvName].SrvIndex + item.GetSrvDescriptorOffset();
+        }
+
+        CD3DX12_GPU_DESCRIPTOR_HANDLE tex(renderData.GetSrvDescriptorHeap()->GetGPUDescriptorHandleForHeapStart());
+        tex.Offset(srvIndex, mGraphics->mCbvSrvUavDescriptorSize);
+        mGraphics->mCommandList->SetGraphicsRootDescriptorTable(slot, tex);
       }
 
-      mGraphics->mCommandList->DrawIndexedInstanced(static_cast<UINT>(mesh->GetIndexCount()), 1, 0, 0, 0);
+      mGraphics->mCommandList->DrawIndexedInstanced(arg.IndexCount, 1, arg.StartIndexLocation, arg.BaseVertexLocation, 0);
     }
   }
 }
@@ -462,18 +443,17 @@ void RenderExample::Update(float dt)
   float z = mRadius * sinf(mPhi) * sinf(mTheta);
   float y = mRadius * cosf(mPhi);
 
-  XMMATRIX world = XMLoadFloat4x4(&mWorld);
+  float lightRotSpeed = 0.1f;
+  mLight.direction.x  = sin(rotTime * lightRotSpeed);
+  mLight.direction.z  = cos(rotTime * lightRotSpeed);
 
-  mLight.direction.x = sin(rotTime * 0.5);
-  mLight.direction.z = cos(rotTime * 0.3);
-
-  // Only the first "main" light casts a shadow.
   XMVECTOR lightDir  = XMLoadFloat3(&mLight.direction);
   XMVECTOR lightPos  = -2.0f * mSceneBounds.Radius * lightDir;
   XMVECTOR targetPos = XMLoadFloat3(&mSceneBounds.Center);
   XMVECTOR lightUp   = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
   XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, lightUp);
 
+  // Transform bounding sphere to light space.
   XMFLOAT3 sphereCenterLS;
   XMStoreFloat3(&sphereCenterLS, XMVector3TransformCoord(targetPos, lightView));
 
@@ -487,87 +467,85 @@ void RenderExample::Update(float dt)
 
   XMMATRIX lightProj = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
 
-  // Transform NDC space [-1,+1]^2 to texture space [0,1]^2
-  XMMATRIX T(0.5f, 0.0f, 0.0f, 0.0f, 0.0f, -0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 0.5f, 0.0f, 1.0f);
+  XMMATRIX texTrans(0.5f, 0.0f, 0.0f, 0.0f,   // line 1
+                    0.0f, -0.5f, 0.0f, 0.0f,  // line 2
+                    0.0f, 0.0f, 1.0f, 0.0f,   // line 3
+                    0.5f, 0.5f, 0.0f, 1.0f    // line 4
+  );
 
   XMMATRIX lightViewProj   = lightView * lightProj;
-  XMMATRIX shadowTransform = lightView * lightProj * T;
+  XMMATRIX shadowTransform = lightView * lightProj * texTrans;
 
-  mSkybox.GetShaderInfo(CTEXT("skybox")).SetFloat3(CTEXT("cbPerObject.gEyePosW"), mCamera.GetPostion());
-  mSkybox.GetShaderInfo(CTEXT("skybox"))
-      .SetMatrix(CTEXT("cbPerObject.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
-
-  for (auto model : models) {
-    model->GetShaderInfo(CTEXT("pbr")).SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(model->GetTransformMatrix()));
-    model->GetShaderInfo(CTEXT("pbr")).SetMaterialDesc(CTEXT("cbMaterial.gMaterial"), model->GetMaterialDesc());
-    model->GetShaderInfo(CTEXT("pbr")).SetLight(CTEXT("cbMaterial.gLight"), mLight);
-    model->GetShaderInfo(CTEXT("pbr")).SetFloat3(CTEXT("cbMaterial.gEyePosW"), mCamera.GetPostion());
-    model->GetShaderInfo(CTEXT("pbr"))
-        .SetMatrix(CTEXT("cbPerObject.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
-    model->GetShaderInfo(CTEXT("pbr")).SetMatrix(CTEXT("cbPerObject.gShadowTransform"), XMMatrixTranspose(shadowTransform));
-
-    model->GetShaderInfo(CTEXT("shadow"))
-        .SetMatrix(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(model->GetTransformMatrix()));
-    model->GetShaderInfo(CTEXT("shadow")).SetMatrix(CTEXT("cbPerObject.gViewProj"), XMMatrixTranspose(lightViewProj));
-  }
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gShadowTransform"), XMMatrixTranspose(shadowTransform));
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gLight"), mLight);
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gEyePosW"), mCamera.GetPostion());
+  mShadowShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(lightViewProj));
+  mSkyboxShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+  mSkyboxShader->GetCBufferManager().SetValue(CTEXT("cbPass.gEyePosW"), mCamera.GetPostion());
 }
 
 void RenderExample::BuildPSO()
 {
-  D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePsoDesc;
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC standardPsoDesc;
+  ZeroMemory(&standardPsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+  standardPsoDesc.InputLayout     = {Vertex::InputLayout.data(), (UINT)Vertex::InputLayout.size()};
+  standardPsoDesc.pRootSignature  = mPBRShader->GetRootSignature();
+  standardPsoDesc.VS              = {reinterpret_cast<BYTE*>(mPBRShader->GetVS()->GetBufferPointer()), mPBRShader->GetVS()->GetBufferSize()};
+  standardPsoDesc.PS              = {reinterpret_cast<BYTE*>(mPBRShader->GetPS()->GetBufferPointer()), mPBRShader->GetPS()->GetBufferSize()};
+  standardPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+  standardPsoDesc.BlendState      = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+  standardPsoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+  standardPsoDesc.SampleMask            = UINT_MAX;
+  standardPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+  standardPsoDesc.NumRenderTargets      = 1;
+  standardPsoDesc.RTVFormats[0]         = mGraphics->mBackBufferFormat;
+  standardPsoDesc.SampleDesc.Count      = mGraphics->m4xMsaaState ? 4 : 1;
+  standardPsoDesc.SampleDesc.Quality    = mGraphics->m4xMsaaState ? (mGraphics->m4xMsaaQuality - 1) : 0;
+  standardPsoDesc.DSVFormat             = mGraphics->mDepthStencilFormat;
+  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&standardPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("StandardPSO")])));
 
-  //
-  // PSO for opaque objects.
-  //
-  ZeroMemory(&opaquePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-  opaquePsoDesc.InputLayout    = {Vertex::InputLayout.data(), (UINT)Vertex::InputLayout.size()};
-  opaquePsoDesc.pRootSignature = mBoxShader.GetRootSignature();
-  opaquePsoDesc.VS = {reinterpret_cast<BYTE*>(mBoxShader.GetVS()->GetBufferPointer()), mBoxShader.GetVS()->GetBufferSize()};
-  opaquePsoDesc.PS = {reinterpret_cast<BYTE*>(mBoxShader.GetPS()->GetBufferPointer()), mBoxShader.GetPS()->GetBufferSize()};
-  opaquePsoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-  opaquePsoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-  opaquePsoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-  opaquePsoDesc.SampleMask            = UINT_MAX;
-  opaquePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-  opaquePsoDesc.NumRenderTargets      = 1;
-  opaquePsoDesc.RTVFormats[0]         = mGraphics->mBackBufferFormat;
-  opaquePsoDesc.SampleDesc.Count      = mGraphics->m4xMsaaState ? 4 : 1;
-  opaquePsoDesc.SampleDesc.Quality    = mGraphics->m4xMsaaState ? (mGraphics->m4xMsaaQuality - 1) : 0;
-  opaquePsoDesc.DSVFormat             = mGraphics->mDepthStencilFormat;
-  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("StandardPSO")])));
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPsoDesc = standardPsoDesc;
+  skyPsoDesc.RasterizerState.CullMode           = D3D12_CULL_MODE_NONE;
+  skyPsoDesc.DepthStencilState.DepthFunc        = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+  skyPsoDesc.pRootSignature                     = mSkyboxShader->GetRootSignature();
 
-  //
-  // PSO for shadow map pass.
-  //
-  D3D12_GRAPHICS_PIPELINE_STATE_DESC smapPsoDesc   = opaquePsoDesc;
-  smapPsoDesc.RasterizerState.DepthBias            = 100000;
-  smapPsoDesc.RasterizerState.DepthBiasClamp       = 0.0f;
-  smapPsoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
-  smapPsoDesc.pRootSignature                       = mShadowShader.GetRootSignature();
-  smapPsoDesc.VS = {reinterpret_cast<BYTE*>(mShadowShader.GetVS()->GetBufferPointer()), mShadowShader.GetVS()->GetBufferSize()};
-  smapPsoDesc.PS = {reinterpret_cast<BYTE*>(mShadowShader.GetPS()->GetBufferPointer()), mShadowShader.GetPS()->GetBufferSize()};
+  skyPsoDesc.VS = {reinterpret_cast<BYTE*>(mSkyboxShader->GetVS()->GetBufferPointer()), mSkyboxShader->GetVS()->GetBufferSize()};
+  skyPsoDesc.PS = {reinterpret_cast<BYTE*>(mSkyboxShader->GetPS()->GetBufferPointer()), mSkyboxShader->GetPS()->GetBufferSize()};
+
+  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&skyPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("SkyboxPSO")])));
+
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPsoDesc   = standardPsoDesc;
+  shadowPsoDesc.RasterizerState.DepthBias            = 100000;
+  shadowPsoDesc.RasterizerState.DepthBiasClamp       = 0.0f;
+  shadowPsoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
+  shadowPsoDesc.pRootSignature                       = mShadowShader->GetRootSignature();
+
+  shadowPsoDesc.VS = {reinterpret_cast<BYTE*>(mShadowShader->GetVS()->GetBufferPointer()), mShadowShader->GetVS()->GetBufferSize()};
+  shadowPsoDesc.PS = {reinterpret_cast<BYTE*>(mShadowShader->GetPS()->GetBufferPointer()), mShadowShader->GetPS()->GetBufferSize()};
 
   // Shadow map pass does not have a render target.
-  smapPsoDesc.RTVFormats[0]    = DXGI_FORMAT_UNKNOWN;
-  smapPsoDesc.NumRenderTargets = 0;
-  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&smapPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("ShadowPSO")])));
+  shadowPsoDesc.RTVFormats[0]    = DXGI_FORMAT_UNKNOWN;
+  shadowPsoDesc.NumRenderTargets = 0;
+  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&shadowPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("ShadowPSO")])));
 
-  //
-  // PSO for sky.
-  //
-  D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPsoDesc = opaquePsoDesc;
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPsoDesc = standardPsoDesc;
 
-  // The camera is inside the sky sphere, so just turn off culling.
-  skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+  D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
 
-  // Make sure the depth function is LESS_EQUAL and not just LESS.
-  // Otherwise, the normalized depth values at z = 1 (NDC) will
-  // fail the depth test if the depth buffer was cleared to 1.
-  skyPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-  skyPsoDesc.pRootSignature              = mSkyboxShader.GetRootSignature();
-  skyPsoDesc.VS = {reinterpret_cast<BYTE*>(mSkyboxShader.GetVS()->GetBufferPointer()), mSkyboxShader.GetVS()->GetBufferSize()};
-  skyPsoDesc.PS = {reinterpret_cast<BYTE*>(mSkyboxShader.GetPS()->GetBufferPointer()), mSkyboxShader.GetPS()->GetBufferSize()};
-  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&skyPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("SkyboxPSO")])));
+  transparencyBlendDesc.BlendEnable           = true;
+  transparencyBlendDesc.LogicOpEnable         = false;
+  transparencyBlendDesc.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
+  transparencyBlendDesc.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+  transparencyBlendDesc.BlendOp               = D3D12_BLEND_OP_ADD;
+  transparencyBlendDesc.SrcBlendAlpha         = D3D12_BLEND_ONE;
+  transparencyBlendDesc.DestBlendAlpha        = D3D12_BLEND_ZERO;
+  transparencyBlendDesc.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+  transparencyBlendDesc.LogicOp               = D3D12_LOGIC_OP_NOOP;
+  transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+  transparentPsoDesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
+  TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&transparentPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("TransparentPSO")])));
 }
 
 DEFINE_APPLICATION_MAIN(RenderExample)

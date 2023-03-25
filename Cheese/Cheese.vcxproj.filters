@@ -37,6 +37,12 @@
     <Filter Include="Shader">
       <UniqueIdentifier>{3ec17209-1637-4371-b839-065d41a11841}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ThirdParty">
+      <UniqueIdentifier>{2264033c-b217-4b91-9071-624965e6d626}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty\tinygltf">
+      <UniqueIdentifier>{157ff9f4-0c99-4148-a132-3fa197618ef3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\Core\CheeseApp.cc">
@@ -75,9 +81,6 @@
     <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp">
       <Filter>Model</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Model\Model.cc">
-      <Filter>Shader</Filter>
-    </ClCompile>
     <ClCompile Include="Source\Shader\ShaderHelper.cc">
       <Filter>Shader</Filter>
     </ClCompile>
@@ -87,13 +90,22 @@
     <ClCompile Include="Source\Model\Geometry.cc">
       <Filter>Model</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Shader\ShaderInfo.cc">
-      <Filter>Shader</Filter>
-    </ClCompile>
     <ClCompile Include="Source\Shader\Shader.cc">
       <Filter>Shader</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Graphics\ShadowMap.cc" />
+    <ClCompile Include="Source\Shader\ConstantBuffer.cc">
+      <Filter>Shader</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Model\Model.cc">
+      <Filter>Model</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Model\ModelLoader.cc">
+      <Filter>Model</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Graphics\ShadowMap.cc">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Graphics\RenderData.cc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\CheeseApp.h">
@@ -162,12 +174,36 @@
     <ClInclude Include="Source\Model\Geometry.h">
       <Filter>Model</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Shader\ShaderInfo.h">
-      <Filter>Shader</Filter>
-    </ClInclude>
     <ClInclude Include="Source\Shader\Shader.h">
       <Filter>Shader</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Graphics\ShadowMap.h" />
+    <ClInclude Include="Source\Shader\ShaderResource.h">
+      <Filter>Shader</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Shader\ConstantBuffer.h">
+      <Filter>Shader</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Model\ModelLoader.h">
+      <Filter>Model</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Graphics\ShadowMap.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\d3dx12.h">
+      <Filter>ThirdParty</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\tinygltf\tiny_gltf.h">
+      <Filter>ThirdParty\tinygltf</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\tinygltf\stb_image_write.h">
+      <Filter>ThirdParty\tinygltf</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\tinygltf\stb_image.h">
+      <Filter>ThirdParty\tinygltf</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\tinygltf\json.hpp">
+      <Filter>ThirdParty\tinygltf</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Graphics\RenderData.h" />
   </ItemGroup>
 </Project>

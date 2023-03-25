@@ -42,7 +42,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
@@ -134,14 +134,16 @@
   <ItemGroup>
     <ClCompile Include="Source\Core\Camera.cc" />
     <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp" />
+    <ClCompile Include="Source\Graphics\RenderData.cc" />
     <ClCompile Include="Source\Graphics\ShadowMap.cc" />
+    <ClCompile Include="Source\Model\ModelLoader.cc" />
+    <ClCompile Include="Source\Shader\ConstantBuffer.cc" />
     <ClCompile Include="Source\Shader\Shader.cc" />
     <ClCompile Include="Source\Model\Geometry.cc" />
     <ClCompile Include="Source\Model\Mesh.cc" />
     <ClCompile Include="Source\Model\Model.cc" />
     <ClCompile Include="Source\Shader\ShaderHelper.cc" />
     <ClCompile Include="Source\Utils\Date\Date.cc" />
-    <ClCompile Include="Source\Shader\ShaderInfo.cc" />
     <ClCompile Include="Source\Core\CheeseApp.cc" />
     <ClCompile Include="Source\Core\CheeseWindow.cc" />
     <ClCompile Include="Source\Graphics\D3DUtil.cc" />
@@ -155,7 +157,10 @@
   <ItemGroup>
     <ClInclude Include="Source\Core\Camera.h" />
     <ClInclude Include="Source\Graphics\DDSTextureLoader.h" />
+    <ClInclude Include="Source\Graphics\RenderData.h" />
     <ClInclude Include="Source\Graphics\ShadowMap.h" />
+    <ClInclude Include="Source\Model\ModelLoader.h" />
+    <ClInclude Include="Source\Shader\ConstantBuffer.h" />
     <ClInclude Include="Source\Shader\Shader.h" />
     <ClInclude Include="Source\Model\Geometry.h" />
     <ClInclude Include="Source\Model\Mesh.h" />
@@ -163,6 +168,7 @@
     <ClInclude Include="Source\Math\Transform.h" />
     <ClInclude Include="Source\Model\Model.h" />
     <ClInclude Include="Source\Shader\ShaderHelper.h" />
+    <ClInclude Include="Source\Shader\ShaderResource.h" />
     <ClInclude Include="Source\Utils\Date\Date.h" />
     <ClInclude Include="Source\Utils\Log\ConsoleLogDevice.h" />
     <ClInclude Include="Source\Common\TypeDef.h" />
@@ -172,12 +178,16 @@
     <ClInclude Include="Source\Core\Delegate.hpp" />
     <ClInclude Include="Source\Graphics\D3DUtil.h" />
     <ClInclude Include="Source\Graphics\IGraphics.h" />
-    <ClInclude Include="Source\Shader\ShaderInfo.h" />
     <ClInclude Include="Source\Input\InputConponent.h" />
     <ClInclude Include="Source\Input\InputHelper.h" />
     <ClInclude Include="Source\Utils\GameTimer.h" />
     <ClInclude Include="Source\Utils\Log\ILogDevice.h" />
     <ClInclude Include="Source\Utils\Log\Logger.h" />
+    <ClInclude Include="ThirdParty\d3dx12.h" />
+    <ClInclude Include="ThirdParty\tinygltf\json.hpp" />
+    <ClInclude Include="ThirdParty\tinygltf\stb_image.h" />
+    <ClInclude Include="ThirdParty\tinygltf\stb_image_write.h" />
+    <ClInclude Include="ThirdParty\tinygltf\tiny_gltf.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -95,7 +95,6 @@ IMesh* Geometry::GeneratePlane(float width, float depth, uint32 m, uint32 n)
   float dv = 1.0f / (m - 1) * depth;
 
   std::vector<Vertex> vertices(vertexCount);
-
   for (uint32 i = 0; i < m; ++i) {
     float z = halfDepth - i * dz;
     for (uint32 j = 0; j < n; ++j) {
@@ -105,7 +104,6 @@ IMesh* Geometry::GeneratePlane(float width, float depth, uint32 m, uint32 n)
       vertices[i * n + j].Normal   = XMFLOAT3(0.0f, 1.0f, 0.0f);
       vertices[i * n + j].Tangent  = XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f);
 
-      // Stretch texture over grid.
       vertices[i * n + j].TexCoord.x = j * du;
       vertices[i * n + j].TexCoord.y = i * dv;
     }

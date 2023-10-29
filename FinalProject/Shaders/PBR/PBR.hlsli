@@ -16,7 +16,9 @@ struct VertexIn {
 struct VertexOut {
   float4 PosH : SV_POSITION;
   float3 PosW : POSITION0;
-  float4 ShadowPosH : POSITION1;
+  float4 CurPosition: POSITION1;
+  float4 PrevPosition: POSITION2;
+  float4 ShadowPosH : ShadowPosition;
   float3 NormalW : NORMAL;
   float3 TangentW : TANGENT;
   float2 Texcoord : TEXCOORD;

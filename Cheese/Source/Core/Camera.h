@@ -4,6 +4,11 @@
 #include <d3d12.h>
 #include "Math/Transform.h"
 
+using namespace DirectX;
+
+XMMATRIX Identity4Mat();
+XMFLOAT4X4 Identity4x4();
+
 class Camera
 {
  public:
@@ -31,6 +36,9 @@ class Camera
   DirectX::XMMATRIX GetLocalToWorldMatrixXM() const;
   DirectX::XMMATRIX GetViewMatrixXM() const;
   DirectX::XMMATRIX GetProjMatrixXM() const;
+  DirectX::XMMATRIX GetProjJitteredMatrixXM() const;
+
+  DirectX::XMMATRIX GetViewProjJitteredMatrixXM() const;
   DirectX::XMMATRIX GetViewProjMatrixXM() const;
 
   D3D12_VIEWPORT GetViewPort() const;
@@ -39,6 +47,9 @@ class Camera
   float GetFarZ() const;
   float GetFovY() const;
   float GetAspectRatio() const;
+
+  void SetJitterValues(const XMFLOAT2& values) { mJitterValues = values; }
+  XMFLOAT2 GetJitterValues() { return mJitterValues; }
 
   void SetFrustum(float fovY, float aspect, float nearZ, float farZ);
 
@@ -56,6 +67,11 @@ class Camera
 
  private:
   Transform mTransform = {};
+
+  // Jitter
+  XMFLOAT2 mJitterValues     = {0, 0};
+  XMMATRIX mProjJittered     = Identity4Mat();
+  XMMATRIX mPrevProjJittered = Identity4Mat();
 
   float mNearZ  = 0.0f;
   float mFarZ   = 0.0f;

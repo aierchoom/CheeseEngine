@@ -66,7 +66,7 @@ void Graphics::CreateCommandObjects()
 
 void Graphics::CreateSwapChain(CheeseWindow* window)
 {
-  // Release the previous swapchain we will be recreating.
+  // Release the previous swap chain we will be recreating.
   mSwapChain.Reset();
 
   DXGI_SWAP_CHAIN_DESC sd;
@@ -92,7 +92,7 @@ void Graphics::CreateSwapChain(CheeseWindow* window)
 void Graphics::CreateRtvAndDsvDescriptorHeaps()
 {
   D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-  rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
+  rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 1;  // Add 1 rtv for motionvector
   rtvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
   rtvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
   rtvHeapDesc.NodeMask       = 0;
@@ -116,7 +116,7 @@ void Graphics::FlushCommandQueue()
   // processing all the commands prior to this Signal().
   TIFF(mCommandQueue->Signal(mFence.Get(), mCurrentFence));
 
-  // CPU will waitting for GPU processing command.
+  // CPU will waiting for GPU processing command.
   if (mFence->GetCompletedValue() < mCurrentFence) {
     HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
 
@@ -137,17 +137,28 @@ void Graphics::ExecuteCommandList()
 }
 
 ID3D12Resource* Graphics::CurrentBackBuffer() const { return mSwapChainBuffer[mCurrBackBuffer].Get(); }
+ID3D12Resource* Graphics::MotionVectorBuffer() const { return mMotionVectorBuffer.Get(); }
 
 D3D12_CPU_DESCRIPTOR_HANDLE Graphics::CurrentBackBufferView() const
 {
   return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), mCurrBackBuffer, mRtvDescriptorSize);
 }
 
+D3D12_CPU_DESCRIPTOR_HANDLE Graphics::MotionVectorBufferView() const
+{
+  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount, mRtvDescriptorSize);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE Graphics::MotionVectorBufferView1() const
+{
+  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount + 1, mRtvDescriptorSize);
+}
+
 D3D12_CPU_DESCRIPTOR_HANDLE Graphics::DepthStencilView() const { return mDsvHeap->GetCPUDescriptorHandleForHeapStart(); }
 
 void Graphics::OnResize(CheeseWindow* window)
 {
-  if(window->GetWidth()==0&&window->GetHeight()==0){
+  if (window->GetWidth() == 0 && window->GetHeight() == 0) {
     return;
   }
 
@@ -194,6 +205,35 @@ void Graphics::OnResize(CheeseWindow* window)
   }
 
   // Create the depth/stencil buffer and view.
+  D3D12_RESOURCE_DESC motionVectorDesc;
+  motionVectorDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  motionVectorDesc.Alignment        = 0;
+  motionVectorDesc.Width            = window->GetWidth();
+  motionVectorDesc.Height           = window->GetHeight();
+  motionVectorDesc.DepthOrArraySize = 1;
+  motionVectorDesc.MipLevels        = 1;
+  motionVectorDesc.Format           = mMotionVectorFormat;
+
+  motionVectorDesc.SampleDesc.Count   = m4xMsaaState ? 4 : 1;
+  motionVectorDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+  motionVectorDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  motionVectorDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+  D3D12_CLEAR_VALUE motionVectorClearColor;
+  motionVectorClearColor.Format     = mMotionVectorFormat;
+  motionVectorClearColor.Color[0]   = 0.0f;
+  motionVectorClearColor.Color[1]   = 0.0f;
+  motionVectorClearColor.Color[2]   = 0.0f;
+  motionVectorClearColor.Color[3]   = 0.0f;
+  CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &motionVectorDesc, D3D12_RESOURCE_STATE_COMMON,
+                                           &motionVectorClearColor, IID_PPV_ARGS(mMotionVectorBuffer.GetAddressOf())));
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE mvvHeapHandle(mRtvHeap->GetCPUDescriptorHandleForHeapStart());
+  mvvHeapHandle.Offset(SwapChainBufferCount, mRtvDescriptorSize);
+  mD3dDevice->CreateRenderTargetView(mMotionVectorBuffer.Get(), nullptr, mvvHeapHandle);
+
+  // Create the depth/stencil buffer and view.
   D3D12_RESOURCE_DESC depthStencilDesc;
   depthStencilDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
   depthStencilDesc.Alignment        = 0;
@@ -209,12 +249,12 @@ void Graphics::OnResize(CheeseWindow* window)
   depthStencilDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
   D3D12_CLEAR_VALUE optClear;
-  optClear.Format                   = mDepthStencilFormat;
-  optClear.DepthStencil.Depth       = 1.0f;
-  optClear.DepthStencil.Stencil     = 0;
-  CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &depthStencilDesc, D3D12_RESOURCE_STATE_COMMON,
-                                           &optClear, IID_PPV_ARGS(mDepthStencilBuffer.GetAddressOf())));
+  optClear.Format               = mDepthStencilFormat;
+  optClear.DepthStencil.Depth   = 1.0f;
+  optClear.DepthStencil.Stencil = 0;
+  heapProps                     = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &depthStencilDesc, D3D12_RESOURCE_STATE_COMMON, &optClear,
+                                           IID_PPV_ARGS(mDepthStencilBuffer.GetAddressOf())));
 
   // Create descriptor to mip level 0 of entire resource using the format of the resource.
   D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
@@ -225,8 +265,8 @@ void Graphics::OnResize(CheeseWindow* window)
   mD3dDevice->CreateDepthStencilView(mDepthStencilBuffer.Get(), &dsvDesc, DepthStencilView());
 
   // Transition the resource from its initial state to be used as a depth buffer.
-  CD3DX12_RESOURCE_BARRIER resBarrier = CD3DX12_RESOURCE_BARRIER::Transition(
-      mDepthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+  CD3DX12_RESOURCE_BARRIER resBarrier =
+      CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
   mCommandList->ResourceBarrier(1, &resBarrier);
 
   // Execute the resize commands.

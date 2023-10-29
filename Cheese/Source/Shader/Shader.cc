@@ -101,6 +101,7 @@ void Shader::CreateRootSignature(ID3D12Device* device)
   const uint32 paramterCount = cbufferCount + srvCount;
   vector<CD3DX12_ROOT_PARAMETER> slotRootParameter(paramterCount);
 
+  // use root descriptor
   for (uint32 i = 0; i < cbufferCount; ++i) {
     slotRootParameter[i].InitAsConstantBufferView(i);
   }
@@ -108,7 +109,7 @@ void Shader::CreateRootSignature(ID3D12Device* device)
   vector<CD3DX12_DESCRIPTOR_RANGE> srvTable(srvCount);
   for (uint32 i = 0; i < srvCount; ++i) {
     srvTable[i].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
-    // offset cbuffer paramter index.
+    // offset cbuffer parameter index.
     slotRootParameter[i + cbufferCount].InitAsDescriptorTable(1, &srvTable[i], D3D12_SHADER_VISIBILITY_PIXEL);
   }
 

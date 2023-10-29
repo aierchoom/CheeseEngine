@@ -45,6 +45,7 @@ class RenderItem
   inline const std::vector<DrawArg>& GetDrawArgs() const { return mDrawArgs; }
 
   inline void SetPosition(float x, float y, float z) { mTransform.SetPosition(x, y, z); }
+  inline DirectX::XMFLOAT3 GetPosition() { return mTransform.GetPosition(); }
   inline void SetScale(float x, float y, float z) { mTransform.SetScale(x, y, z); }
   inline void SetRotation(float x, float y, float z) { mTransform.SetRotation(x, y, z); }
   inline DirectX::XMMATRIX GetTransMatrix() { return mTransform.GetLocalToWorldMatrixXM(); }

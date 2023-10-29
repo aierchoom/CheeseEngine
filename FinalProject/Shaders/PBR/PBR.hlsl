@@ -3,17 +3,25 @@
 cbuffer cbPerObject : register(b0)
 {
   matrix gWorld;
+  matrix PrevWorldTransform;
   MaterialDesc gMatDesc;
 };
 
 cbuffer cbPass : register(b1)
 {
   matrix gViewProj;
+  matrix PrevViewProjectionMatrix;
+  float2 PrevJitter;
+  float2 CurrJitter;
   matrix gShadowTransform;
-
   PointLight gLight;
   float3 gEyePosW;
-}
+};
+
+struct GBuffer {
+  float4 colors : SV_Target0;
+  float2 MotionVectors : SV_Target1;
+};
 
 VertexOut VS(VertexIn vin)
 {
@@ -28,14 +36,20 @@ VertexOut VS(VertexIn vin)
   vout.Texcoord = vin.Texcoord;
 
   // multiple view & proj.
-  vout.PosH = mul(posW, gViewProj);
+  vout.PosH = mul(float4(vout.PosW,1.0f), gViewProj);
+
+  // for motion vector
+  vout.CurPosition = vout.PosH;
+  const float4 worldPrevPos = mul(float4(vin.PosL, 1.0f), PrevWorldTransform);
+  vout.PrevPosition = mul(worldPrevPos, PrevViewProjectionMatrix);
 
   vout.ShadowPosH = mul(posW, gShadowTransform);
   return vout;
 }
 
-float4 PS(VertexOut pin) : SV_TARGET
+GBuffer PS(VertexOut pin)
 {
+  GBuffer output;
   float3 gamma = 2.2f;
 
   // normalize normal & tangent to calculate lighting.
@@ -115,5 +129,15 @@ float4 PS(VertexOut pin) : SV_TARGET
   // gamma correct
   litColor = pow(abs(litColor), 1.0f / gamma);
 
-  return float4(litColor, diffuseAlbedo.a);
+  output.colors =  float4(litColor, diffuseAlbedo.a);
+
+  float2 cancelJitter = PrevJitter - CurrJitter;
+  float2 MotionVectors = (pin.PrevPosition.xy / pin.PrevPosition.w) -
+                            (pin.CurPosition.xy / pin.CurPosition.w);
+  output.MotionVectors = MotionVectors - cancelJitter;
+
+  // Transform motion vectors from NDC space to UV space (+Y is top-down).
+  output.MotionVectors *= float2(0.5f, -0.5f);
+
+  return output;
 }

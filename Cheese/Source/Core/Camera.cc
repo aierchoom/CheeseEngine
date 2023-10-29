@@ -1,6 +1,24 @@
 #include "Camera.h"
 
-using namespace DirectX;
+XMMATRIX Identity4Mat()
+{
+  static XMFLOAT4X4 I(1.0f, 0.0f, 0.0f, 0.0,  // line 1
+                      0.0f, 1.0f, 0.0f, 0.0,  // line 2
+                      0.0f, 0.0f, 1.0f, 0.0,  // line 3
+                      0.0f, 0.0f, 0.0f, 1.0   // line 4
+  );
+  return XMLoadFloat4x4(&I);
+}
+
+XMFLOAT4X4 Identity4x4()
+{
+  static XMFLOAT4X4 I(1.0f, 0.0f, 0.0f, 0.0,  // line 1
+                      0.0f, 1.0f, 0.0f, 0.0,  // line 2
+                      0.0f, 0.0f, 1.0f, 0.0,  // line 3
+                      0.0f, 0.0f, 0.0f, 1.0   // line 4
+  );
+  return I;
+}
 
 XMFLOAT3 Camera::GetPostion() const { return mTransform.GetPosition(); }
 XMVECTOR Camera::GetPositionXM() const { return mTransform.GetPositionXM(); }
@@ -31,8 +49,20 @@ XMVECTOR Camera::GetLookAxisXM() const { return mTransform.GetForwardAxisXM(); }
 XMMATRIX Camera::GetLocalToWorldMatrixXM() const { return mTransform.GetLocalToWorldMatrixXM(); }
 
 XMMATRIX Camera::GetViewMatrixXM() const { return mTransform.GetWorldToLocalMatrixXM(); }
-
 XMMATRIX Camera::GetProjMatrixXM() const { return XMMatrixPerspectiveFovLH(mFovY, mAspect, mNearZ, mFarZ); }
+
+XMMATRIX Camera::GetProjJitteredMatrixXM() const
+{
+  auto projMat         = XMMatrixPerspectiveFovLH(mFovY, mAspect, mNearZ, mFarZ);
+  XMFLOAT4X4 jitterMat = Identity4x4();
+  jitterMat(3, 0)      = mJitterValues.x;
+  jitterMat(3, 1)      = mJitterValues.y;
+
+  auto jitterProjMat = (projMat * XMLoadFloat4x4(&jitterMat));
+  return jitterProjMat;
+}
+
+XMMATRIX Camera::GetViewProjJitteredMatrixXM() const { return GetViewMatrixXM() * GetProjJitteredMatrixXM(); }
 
 XMMATRIX Camera::GetViewProjMatrixXM() const { return GetViewMatrixXM() * GetProjMatrixXM(); }
 

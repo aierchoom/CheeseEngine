@@ -28,7 +28,10 @@ class Graphics
   void ExecuteCommandList();
 
   ID3D12Resource* CurrentBackBuffer() const;
+  ID3D12Resource* MotionVectorBuffer() const;
   D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
+  D3D12_CPU_DESCRIPTOR_HANDLE MotionVectorBufferView() const;
+  D3D12_CPU_DESCRIPTOR_HANDLE MotionVectorBufferView1() const;
   D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
 
   virtual void OnResize(CheeseWindow* window);
@@ -52,6 +55,7 @@ class Graphics
   static const int SwapChainBufferCount = 2;
   int mCurrBackBuffer                   = 0;
   ComPtr<ID3D12Resource> mSwapChainBuffer[SwapChainBufferCount];
+  ComPtr<ID3D12Resource> mMotionVectorBuffer;
   ComPtr<ID3D12Resource> mDepthStencilBuffer;
 
   ComPtr<ID3D12DescriptorHeap> mRtvHeap;
@@ -66,6 +70,7 @@ class Graphics
 
   D3D_DRIVER_TYPE mD3dDriverType  = D3D_DRIVER_TYPE_HARDWARE;
   DXGI_FORMAT mBackBufferFormat   = DXGI_FORMAT_R8G8B8A8_UNORM;
+  DXGI_FORMAT mMotionVectorFormat = DXGI_FORMAT_R16G16_FLOAT;
   DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 };
 

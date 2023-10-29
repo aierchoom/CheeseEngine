@@ -21,20 +21,12 @@
 #include <Model/Model.h>
 #include <Model/Geometry.h>
 
+#include <FidelityFX/host/ffx_fsr2.h>
+
 using namespace DirectX;
 using namespace std;
 
 const float Pi = 3.1415926f;
-
-XMFLOAT4X4 Identity4x4()
-{
-  static XMFLOAT4X4 I(1.0f, 0.0f, 0.0f, 0.0,  // line 1
-                      0.0f, 1.0f, 0.0f, 0.0,  // line 2
-                      0.0f, 0.0f, 1.0f, 0.0,  // line 3
-                      0.0f, 0.0f, 0.0f, 1.0   // line 4
-  );
-  return I;
-}
 
 class RenderExample : public CheeseApp
 {
@@ -105,9 +97,14 @@ class RenderExample : public CheeseApp
   float mPhi    = XM_PIDIV4;
   float mRadius = 5.0f;
 
+  XMMATRIX mPrevViewProjectionMatrix = Identity4Mat();
+  XMFLOAT2 mPrevJitter;
+
   RenderData* mRenderData;
   RenderData* mSkyboxRenderData;
   PointLight mLight;
+
+  int mCurrentFrame = 0;
 
   bool mIsMovingMouse = false;
 };
@@ -219,6 +216,7 @@ bool RenderExample::Load()
     auto itemName = pair.first;
     auto& ri      = mRenderData->GetItem(itemName);
     ri.GetPerObjectCBuffer(mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
+    ri.GetPerObjectCBuffer(mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.PrevWorldTransform"), XMMatrixTranspose(world));
     ri.GetPerObjectCBuffer(mShadowShader->GetName()).SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
   }
 
@@ -238,8 +236,12 @@ bool RenderExample::Load()
   mRenderData->GetItem(CTEXT("FlightHelmet"))
       .GetPerObjectCBuffer(mPBRShader->GetName())
       .SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(trans));
+  mRenderData->GetItem(CTEXT("FlightHelmet"))
+      .GetPerObjectCBuffer(mPBRShader->GetName())
+      .SetValue(CTEXT("cbPerObject.PrevWorldTransform"), XMMatrixTranspose(trans));
 
   mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
+  mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mPBRShader->GetName(), CTEXT("cbPerObject.PrevWorldTransform"));
   mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mShadowShader->GetName(), CTEXT("cbPerObject.gWorld"));
 
   matDesc.FresnelR0 = {0.16f, 0.16f, 0.16f};
@@ -247,6 +249,7 @@ bool RenderExample::Load()
   mRenderData->GetItem(CTEXT("BoomBox")).SetPosition(-1.0f, 0.5f, 0.0f);
   mRenderData->GetItem(CTEXT("BoomBox")).SetScale(30.0f, 30.0f, 30.0f);
   mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
+  mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.PrevWorldTransform"));
   mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mShadowShader->GetName(), CTEXT("cbPerObject.gWorld"));
 
   mLight.strength     = {3.0f, 3.0f, 3.0f};
@@ -265,7 +268,9 @@ bool RenderExample::Load()
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
   mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
 
+  mPrevViewProjectionMatrix = mCamera.GetViewProjMatrixXM();
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevViewProjectionMatrix"), XMMatrixTranspose(mPrevViewProjectionMatrix));
 
   mSceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
   mSceneBounds.Radius = sqrtf(10.0f * 10.0f + 15.0f * 15.0f);
@@ -275,6 +280,7 @@ bool RenderExample::Load()
 
 void RenderExample::Draw()
 {
+  // 清空执行命令内存分配器，并且绑定PSO
   TIFF(mGraphics->mDirectCmdListAlloc->Reset());
   TIFF(mGraphics->mCommandList->Reset(mGraphics->mDirectCmdListAlloc.Get(), mPSOs[CTEXT("StandardPSO")].Get()));
 
@@ -305,13 +311,16 @@ void RenderExample::Draw()
 
   // Clear the back buffer and depth buffer.
   mGraphics->mCommandList->ClearRenderTargetView(mGraphics->CurrentBackBufferView(), Colors::LightSteelBlue, 0, nullptr);
+  mGraphics->mCommandList->ClearRenderTargetView(mGraphics->MotionVectorBufferView(), Colors::Black, 0, nullptr);
   mGraphics->mCommandList->ClearDepthStencilView(mGraphics->DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0,
                                                  nullptr);
 
   // Specify the buffers we are going to render to.
-  D3D12_CPU_DESCRIPTOR_HANDLE currBackBufferView = mGraphics->CurrentBackBufferView();
-  D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView   = mGraphics->DepthStencilView();
-  mGraphics->mCommandList->OMSetRenderTargets(1, &currBackBufferView, true, &depthStencilView);
+  D3D12_CPU_DESCRIPTOR_HANDLE currBackBufferView     = mGraphics->CurrentBackBufferView();
+  D3D12_CPU_DESCRIPTOR_HANDLE motionVectorBufferView = mGraphics->MotionVectorBufferView();
+  D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView       = mGraphics->DepthStencilView();
+  D3D12_CPU_DESCRIPTOR_HANDLE rts[2]                 = {currBackBufferView, motionVectorBufferView};
+  mGraphics->mCommandList->OMSetRenderTargets(2, rts, false, &depthStencilView);
 
   mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("StandardPSO")].Get());
   DrawRenderItem(*mRenderData, mPBRShader);
@@ -379,10 +388,10 @@ void RenderExample::DrawRenderItem(RenderData& renderData, Shader* shader, bool 
         auto srvName    = pair.first;
         auto srvSetting = pair.second;
 
-        // offset cbuffer paramter index.
-        uint32 slot = srvSetting.GetSlot() + shader->GetSettings().GetCBSettingCount();
+        // offset cbuffer parameter index.
+        uint32 paramIndex = srvSetting.GetSlot() + shader->GetSettings().GetCBSettingCount();
         if (srvName == CTEXT("gShadowMap")) {
-          mGraphics->mCommandList->SetGraphicsRootDescriptorTable(slot, mRenderData->GetShadowMapHandleGPU());
+          mGraphics->mCommandList->SetGraphicsRootDescriptorTable(paramIndex, mRenderData->GetShadowMapHandleGPU());
           continue;
         }
 
@@ -395,7 +404,7 @@ void RenderExample::DrawRenderItem(RenderData& renderData, Shader* shader, bool 
 
         CD3DX12_GPU_DESCRIPTOR_HANDLE tex(renderData.GetSrvDescriptorHeap()->GetGPUDescriptorHandleForHeapStart());
         tex.Offset(srvIndex, mGraphics->mCbvSrvUavDescriptorSize);
-        mGraphics->mCommandList->SetGraphicsRootDescriptorTable(slot, tex);
+        mGraphics->mCommandList->SetGraphicsRootDescriptorTable(paramIndex, tex);
       }
 
       mGraphics->mCommandList->DrawIndexedInstanced(arg.IndexCount, 1, arg.StartIndexLocation, arg.BaseVertexLocation, 0);
@@ -424,6 +433,8 @@ void RenderExample::Update(float dt)
 {
   static float rotTime = 0.0f;
   rotTime += dt;
+
+  mCurrentFrame = mCurrentFrame + 1;
 
   float speed = 2.0f;
   if (InputComponent::Get()->GetKeyStatus(EKeyMap::KEY_W) == EKeyStatus::PRESSED) {
@@ -476,7 +487,33 @@ void RenderExample::Update(float dt)
   XMMATRIX lightViewProj   = lightView * lightProj;
   XMMATRIX shadowTransform = lightView * lightProj * texTrans;
 
-  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
+  mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.PrevWorldTransform"));
+
+  auto bboxPos = mRenderData->GetItem(CTEXT("BoomBox")).GetPosition();
+  float scale  = 0.0005f;
+  bboxPos.y += sin(rotTime * scale);
+  mRenderData->GetItem(CTEXT("BoomBox")).SetPosition(bboxPos.x, bboxPos.y, bboxPos.z);
+  mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
+
+  mPrevViewProjectionMatrix = mCamera.GetViewProjJitteredMatrixXM();
+  mPrevJitter               = mCamera.GetJitterValues();
+
+  XMVECTOR Pos = {1, 1, 1, 1};
+
+  const int32_t jitterPhaseCount = ffxFsr2GetJitterPhaseCount(1280, 1920);
+
+  float jitterX = 0.0f;
+  float jitterY = 0.0f;
+
+  ffxFsr2GetJitterOffset(&jitterX, &jitterY, mCurrentFrame, jitterPhaseCount);
+  XMFLOAT2 jitter = {-2.f * jitterX / 1280, 2.f * jitterY / 720};
+  mCamera.SetJitterValues(jitter);
+  // mCamera.AddYaw(sin(rotTime * scale));
+
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevJitter"), mPrevJitter);
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.CurrJitter"), mCamera.GetJitterValues());
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevViewProjectionMatrix"), XMMatrixTranspose(mPrevViewProjectionMatrix));
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjJitteredMatrixXM()));
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gShadowTransform"), XMMatrixTranspose(shadowTransform));
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gLight"), mLight);
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gEyePosW"), mCamera.GetPostion());

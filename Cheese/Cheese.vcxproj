@@ -115,7 +115,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <Lib>
-      <AdditionalDependencies>ffx_fsr2_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ffx_fsr2_x64.lib;ffx_backend_dx12_x64d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Lib>
     <Lib>
       <AdditionalLibraryDirectories>$(ProjectDir)Libs\ffx_sdk;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -140,6 +140,7 @@
   <ItemGroup>
     <ClCompile Include="Source\Core\Camera.cc" />
     <ClCompile Include="Source\Graphics\DDSTextureLoader.cpp" />
+    <ClCompile Include="Source\Graphics\Fsr2RenderModule.cc" />
     <ClCompile Include="Source\Graphics\RenderData.cc" />
     <ClCompile Include="Source\Graphics\ShadowMap.cc" />
     <ClCompile Include="Source\Model\ModelLoader.cc" />
@@ -163,6 +164,7 @@
   <ItemGroup>
     <ClInclude Include="Source\Core\Camera.h" />
     <ClInclude Include="Source\Graphics\DDSTextureLoader.h" />
+    <ClInclude Include="Source\Graphics\Fsr2RenderModule.h" />
     <ClInclude Include="Source\Graphics\RenderData.h" />
     <ClInclude Include="Source\Graphics\ShadowMap.h" />
     <ClInclude Include="Source\Model\ModelLoader.h" />

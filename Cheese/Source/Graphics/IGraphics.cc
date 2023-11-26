@@ -1,17 +1,33 @@
 #include "IGraphics.h"
 #include <assert.h>
 
-bool Graphics::Initialize(CheeseWindow* window)
+bool Graphics::Initialize(CheeseWindow* window, const ResolutionInfo& resolution)
 {
+  ID3D12Debug* debugController;
+  ID3D12Debug1* debugController1;
+  if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
+    debugController->EnableDebugLayer();
+    debugController->QueryInterface(IID_PPV_ARGS(&debugController1));
+    debugController1->SetEnableGPUBasedValidation(TRUE);
+    // debugController1->SetEnableSynchronizedCommandQueueValidation(TRUE);
+    // debugController->Release();
+  }
   TIFF(CreateDXGIFactory1(IID_PPV_ARGS(&mdxgiFactory)));
 
   // use default adapter
-  HRESULT hardwareResult = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mD3dDevice));
+  HRESULT hardwareResult = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&mD3dDevice));
 
   if (FAILED(hardwareResult)) {
     ComPtr<IDXGIAdapter> pWarpAdapter;
     TIFF(mdxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&pWarpAdapter)));
     TIFF(D3D12CreateDevice(pWarpAdapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mD3dDevice)));
+  }
+
+  D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {D3D_SHADER_MODEL_6_6};
+  if (SUCCEEDED(mD3dDevice->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)))) {
+    if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_6) {
+      OutputDebugStringW(L"Support for shader model 6.6.");
+    }
   }
 
   TIFF(mD3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
@@ -20,20 +36,11 @@ bool Graphics::Initialize(CheeseWindow* window)
   mDsvDescriptorSize       = mD3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
   mCbvSrvUavDescriptorSize = mD3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-  D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
-  msQualityLevels.Format           = mBackBufferFormat;
-  msQualityLevels.SampleCount      = 4;
-  msQualityLevels.Flags            = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
-  msQualityLevels.NumQualityLevels = 0;
-  TIFF(mD3dDevice->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &msQualityLevels, sizeof(msQualityLevels)));
-
-  m4xMsaaQuality = msQualityLevels.NumQualityLevels;
-  assert(m4xMsaaQuality > 0 && "Unexpected MSAA quality level.");
-
   CreateCommandObjects();
   CreateSwapChain(window);
   CreateRtvAndDsvDescriptorHeaps();
-  OnResize(window);
+  CreateFsr2RtvAndDsvDescriptorHeaps();
+  OnResize(resolution);
 
   return true;
 }
@@ -77,8 +84,8 @@ void Graphics::CreateSwapChain(CheeseWindow* window)
   sd.BufferDesc.Format                  = mBackBufferFormat;
   sd.BufferDesc.ScanlineOrdering        = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
   sd.BufferDesc.Scaling                 = DXGI_MODE_SCALING_UNSPECIFIED;
-  sd.SampleDesc.Count                   = m4xMsaaState ? 4 : 1;
-  sd.SampleDesc.Quality                 = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+  sd.SampleDesc.Count                   = 1;
+  sd.SampleDesc.Quality                 = 0;
   sd.BufferUsage                        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   sd.BufferCount                        = SwapChainBufferCount;
   sd.OutputWindow                       = window->GetHwnd();
@@ -92,7 +99,7 @@ void Graphics::CreateSwapChain(CheeseWindow* window)
 void Graphics::CreateRtvAndDsvDescriptorHeaps()
 {
   D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-  rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 1;  // Add 1 rtv for motionvector
+  rtvHeapDesc.NumDescriptors = SwapChainBufferCount;  // Add 1 rtv for motionvector
   rtvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
   rtvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
   rtvHeapDesc.NodeMask       = 0;
@@ -104,6 +111,158 @@ void Graphics::CreateRtvAndDsvDescriptorHeaps()
   dsvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
   dsvHeapDesc.NodeMask       = 0;
   TIFF(mD3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(mDsvHeap.GetAddressOf())));
+}
+
+void Graphics::CreateFsr2RtvAndDsvDescriptorHeaps()
+{
+  D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+  rtvHeapDesc.NumDescriptors = mFsr2BufferCount;
+  rtvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+  rtvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+  rtvHeapDesc.NodeMask       = 0;
+  TIFF(mD3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(mFsr2RtvHeap.GetAddressOf())));
+
+  D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+  dsvHeapDesc.NumDescriptors = 1;
+  dsvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+  dsvHeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+  dsvHeapDesc.NodeMask       = 0;
+  TIFF(mD3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(mFsr2DsvHeap.GetAddressOf())));
+}
+
+void Graphics::CreateFsr2Buffer(const ResolutionInfo& resolution)
+{
+  ResetCommandList();
+  mRenderBuffer.Reset();
+  mColorBuffer.Reset();
+  mColorDepthBuffer.Reset();
+  mMotionVectorBuffer.Reset();
+  // Create the render buffer and view.
+  const D3D12_RESOURCE_FLAGS flag = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+  D3D12_RESOURCE_DESC renderTargetDesc;
+  renderTargetDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  renderTargetDesc.Alignment          = 0;
+  renderTargetDesc.Width              = resolution.DisplayWidth;
+  renderTargetDesc.Height             = resolution.DisplayHeight;
+  renderTargetDesc.DepthOrArraySize   = 1;
+  renderTargetDesc.MipLevels          = 1;
+  renderTargetDesc.Format             = mBackBufferFormat;
+  renderTargetDesc.SampleDesc.Count   = 1;
+  renderTargetDesc.SampleDesc.Quality = 0;
+  renderTargetDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  renderTargetDesc.Flags              = flag;
+
+  D3D12_CLEAR_VALUE clearColor;
+  clearColor.Format                 = mBackBufferFormat;
+  clearColor.Color[0]               = 0.0f;
+  clearColor.Color[1]               = 0.0f;
+  clearColor.Color[2]               = 0.0f;
+  clearColor.Color[3]               = 0.0f;
+  CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &renderTargetDesc, D3D12_RESOURCE_STATE_COMMON, &clearColor,
+                                           IID_PPV_ARGS(mRenderBuffer.GetAddressOf())));
+  mRenderBuffer->SetName(L"RenderBuffer");
+  CD3DX12_CPU_DESCRIPTOR_HANDLE renderRtvHeapHandle(mFsr2RtvHeap->GetCPUDescriptorHandleForHeapStart());
+  renderRtvHeapHandle.Offset(RenderRtvIndex, mRtvDescriptorSize);
+  mD3dDevice->CreateRenderTargetView(mRenderBuffer.Get(), nullptr, renderRtvHeapHandle);
+
+  // Transition the resource from its initial state to be used as a depth buffer.
+  mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mRenderBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+  // Create the color buffer and view.
+  D3D12_RESOURCE_DESC colorTargetDesc;
+  colorTargetDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  colorTargetDesc.Alignment          = 0;
+  colorTargetDesc.Width              = resolution.RenderWidth;
+  colorTargetDesc.Height             = resolution.RenderHeight;
+  colorTargetDesc.DepthOrArraySize   = 1;
+  colorTargetDesc.MipLevels          = 1;
+  colorTargetDesc.Format             = mBackBufferFormat;
+  colorTargetDesc.SampleDesc.Count   = 1;
+  colorTargetDesc.SampleDesc.Quality = 0;
+  colorTargetDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  colorTargetDesc.Flags              = flag;
+
+  heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  TIFF(
+      mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &colorTargetDesc, D3D12_RESOURCE_STATE_COMMON, &clearColor, IID_PPV_ARGS(mColorBuffer.GetAddressOf())));
+  mColorBuffer->SetName(L"ColorBuffer");
+  CD3DX12_CPU_DESCRIPTOR_HANDLE colorRtvHeapHandle(mFsr2RtvHeap->GetCPUDescriptorHandleForHeapStart());
+  colorRtvHeapHandle.Offset(ColorRtvIndex, mRtvDescriptorSize);
+  mD3dDevice->CreateRenderTargetView(mColorBuffer.Get(), nullptr, colorRtvHeapHandle);
+
+  mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mColorBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+  // Create the motion vector buffer and view.
+  D3D12_RESOURCE_DESC motionVectorDesc;
+  motionVectorDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  motionVectorDesc.Alignment        = 0;
+  motionVectorDesc.Width            = resolution.RenderWidth;
+  motionVectorDesc.Height           = resolution.RenderHeight;
+  motionVectorDesc.DepthOrArraySize = 1;
+  motionVectorDesc.MipLevels        = 1;
+  motionVectorDesc.Format           = mMotionVectorFormat;
+
+  motionVectorDesc.SampleDesc.Count   = 1;
+  motionVectorDesc.SampleDesc.Quality = 0;
+  motionVectorDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  motionVectorDesc.Flags              = flag;
+
+  heapProps         = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  clearColor.Format = mMotionVectorFormat;
+  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &motionVectorDesc, D3D12_RESOURCE_STATE_COMMON, &clearColor,
+                                           IID_PPV_ARGS(mMotionVectorBuffer.GetAddressOf())));
+  mMotionVectorBuffer->SetName(L"MotionVectorBuffer");
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE mvvHeapHandle(mFsr2RtvHeap->GetCPUDescriptorHandleForHeapStart());
+  mvvHeapHandle.Offset(MotionVectorRtvIndex, mRtvDescriptorSize);
+  mD3dDevice->CreateRenderTargetView(mMotionVectorBuffer.Get(), nullptr, mvvHeapHandle);
+
+  mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mMotionVectorBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+  // Create the depth/stencil buffer and view.
+  D3D12_RESOURCE_DESC depthStencilDesc;
+  depthStencilDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  depthStencilDesc.Alignment        = 0;
+  depthStencilDesc.Width            = resolution.RenderWidth;
+  depthStencilDesc.Height           = resolution.RenderHeight;
+  depthStencilDesc.DepthOrArraySize = 1;
+  depthStencilDesc.MipLevels        = 1;
+  depthStencilDesc.Format           = mDepthStencilFormat;
+
+  depthStencilDesc.SampleDesc.Count   = 1;
+  depthStencilDesc.SampleDesc.Quality = 0;
+  depthStencilDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+  depthStencilDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+  D3D12_CLEAR_VALUE depthClearColor;
+  depthClearColor.Format               = mDepthStencilFormat;
+  depthClearColor.DepthStencil.Depth   = 1.0f;
+  depthClearColor.DepthStencil.Stencil = 0.0f;
+  heapProps                            = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &depthStencilDesc, D3D12_RESOURCE_STATE_COMMON, &depthClearColor,
+                                           IID_PPV_ARGS(mColorDepthBuffer.GetAddressOf())));
+  mColorDepthBuffer->SetName(L"ColorDepthBuffer");
+
+  mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mColorDepthBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+
+  // Create descriptor to mip level 0 of entire resource using the format of the resource.
+  D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+  dsvDesc.Flags              = D3D12_DSV_FLAG_NONE;
+  dsvDesc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
+  dsvDesc.Format             = mDepthStencilFormat;
+  dsvDesc.Texture2D.MipSlice = 0;
+  CD3DX12_CPU_DESCRIPTOR_HANDLE colorDepthHandle(mFsr2DsvHeap->GetCPUDescriptorHandleForHeapStart());
+  mD3dDevice->CreateDepthStencilView(mColorDepthBuffer.Get(), &dsvDesc, colorDepthHandle);
+
+  // Execute the resize commands.
+  TIFF(mCommandList->Close());
+  ID3D12CommandList* cmdsLists[] = {mCommandList.Get()};
+  mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+  // Wait until resize is complete.
+  FlushCommandQueue();
 }
 
 void Graphics::FlushCommandQueue()
@@ -137,6 +296,10 @@ void Graphics::ExecuteCommandList()
 }
 
 ID3D12Resource* Graphics::CurrentBackBuffer() const { return mSwapChainBuffer[mCurrBackBuffer].Get(); }
+
+ID3D12Resource* Graphics::RenderTargetBuffer() const { return mRenderBuffer.Get(); }
+ID3D12Resource* Graphics::ColorTargetBuffer() const { return mColorBuffer.Get(); }
+ID3D12Resource* Graphics::ColorDepthBuffer() const { return mColorDepthBuffer.Get(); }
 ID3D12Resource* Graphics::MotionVectorBuffer() const { return mMotionVectorBuffer.Get(); }
 
 D3D12_CPU_DESCRIPTOR_HANDLE Graphics::CurrentBackBufferView() const
@@ -144,21 +307,28 @@ D3D12_CPU_DESCRIPTOR_HANDLE Graphics::CurrentBackBufferView() const
   return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), mCurrBackBuffer, mRtvDescriptorSize);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE Graphics::MotionVectorBufferView() const
+D3D12_CPU_DESCRIPTOR_HANDLE Graphics::RenderTargetBufferView() const
 {
-  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount, mRtvDescriptorSize);
+  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mFsr2RtvHeap->GetCPUDescriptorHandleForHeapStart(), RenderRtvIndex, mRtvDescriptorSize);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE Graphics::MotionVectorBufferView1() const
+D3D12_CPU_DESCRIPTOR_HANDLE Graphics::ColorTargetBufferView() const
 {
-  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount + 1, mRtvDescriptorSize);
+  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mFsr2RtvHeap->GetCPUDescriptorHandleForHeapStart(), ColorRtvIndex, mRtvDescriptorSize);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE Graphics::ColorDepthBufferView() const { return CD3DX12_CPU_DESCRIPTOR_HANDLE(mFsr2DsvHeap->GetCPUDescriptorHandleForHeapStart()); }
+
+D3D12_CPU_DESCRIPTOR_HANDLE Graphics::MotionVectorBufferView() const
+{
+  return CD3DX12_CPU_DESCRIPTOR_HANDLE(mFsr2RtvHeap->GetCPUDescriptorHandleForHeapStart(), MotionVectorRtvIndex, mRtvDescriptorSize);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE Graphics::DepthStencilView() const { return mDsvHeap->GetCPUDescriptorHandleForHeapStart(); }
 
-void Graphics::OnResize(CheeseWindow* window)
+void Graphics::OnResize(const ResolutionInfo& resolution)
 {
-  if (window->GetWidth() == 0 && window->GetHeight() == 0) {
+  if (resolution.DisplayWidth == 0 && resolution.DisplayHeight == 0) {
     return;
   }
 
@@ -188,11 +358,10 @@ void Graphics::OnResize(CheeseWindow* window)
   // Release the previous resources we will be recreating.
   // First initialize will do nothing.
   for (int i = 0; i < SwapChainBufferCount; ++i) mSwapChainBuffer[i].Reset();
-  mDepthStencilBuffer.Reset();
+  mRenderDepthBuffer.Reset();
 
   // Resize the swap chain.
-  TIFF(mSwapChain->ResizeBuffers(SwapChainBufferCount, window->GetWidth(), window->GetHeight(), mBackBufferFormat,
-                                 DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
+  TIFF(mSwapChain->ResizeBuffers(SwapChainBufferCount, resolution.DisplayWidth, resolution.DisplayHeight, mBackBufferFormat, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
 
   mCurrBackBuffer = 0;
 
@@ -205,56 +374,29 @@ void Graphics::OnResize(CheeseWindow* window)
   }
 
   // Create the depth/stencil buffer and view.
-  D3D12_RESOURCE_DESC motionVectorDesc;
-  motionVectorDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-  motionVectorDesc.Alignment        = 0;
-  motionVectorDesc.Width            = window->GetWidth();
-  motionVectorDesc.Height           = window->GetHeight();
-  motionVectorDesc.DepthOrArraySize = 1;
-  motionVectorDesc.MipLevels        = 1;
-  motionVectorDesc.Format           = mMotionVectorFormat;
-
-  motionVectorDesc.SampleDesc.Count   = m4xMsaaState ? 4 : 1;
-  motionVectorDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
-  motionVectorDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-  motionVectorDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-
-  D3D12_CLEAR_VALUE motionVectorClearColor;
-  motionVectorClearColor.Format     = mMotionVectorFormat;
-  motionVectorClearColor.Color[0]   = 0.0f;
-  motionVectorClearColor.Color[1]   = 0.0f;
-  motionVectorClearColor.Color[2]   = 0.0f;
-  motionVectorClearColor.Color[3]   = 0.0f;
-  CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-  TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &motionVectorDesc, D3D12_RESOURCE_STATE_COMMON,
-                                           &motionVectorClearColor, IID_PPV_ARGS(mMotionVectorBuffer.GetAddressOf())));
-
-  CD3DX12_CPU_DESCRIPTOR_HANDLE mvvHeapHandle(mRtvHeap->GetCPUDescriptorHandleForHeapStart());
-  mvvHeapHandle.Offset(SwapChainBufferCount, mRtvDescriptorSize);
-  mD3dDevice->CreateRenderTargetView(mMotionVectorBuffer.Get(), nullptr, mvvHeapHandle);
-
-  // Create the depth/stencil buffer and view.
   D3D12_RESOURCE_DESC depthStencilDesc;
   depthStencilDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
   depthStencilDesc.Alignment        = 0;
-  depthStencilDesc.Width            = window->GetWidth();
-  depthStencilDesc.Height           = window->GetHeight();
+  depthStencilDesc.Width            = resolution.DisplayWidth;
+  depthStencilDesc.Height           = resolution.DisplayHeight;
   depthStencilDesc.DepthOrArraySize = 1;
   depthStencilDesc.MipLevels        = 1;
-  depthStencilDesc.Format           = DXGI_FORMAT_R24G8_TYPELESS;
+  depthStencilDesc.Format           = mDepthStencilFormat;
 
-  depthStencilDesc.SampleDesc.Count   = m4xMsaaState ? 4 : 1;
-  depthStencilDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+  depthStencilDesc.SampleDesc.Count   = 1;
+  depthStencilDesc.SampleDesc.Quality = 0;
   depthStencilDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
   depthStencilDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
   D3D12_CLEAR_VALUE optClear;
   optClear.Format               = mDepthStencilFormat;
   optClear.DepthStencil.Depth   = 1.0f;
-  optClear.DepthStencil.Stencil = 0;
-  heapProps                     = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+  optClear.DepthStencil.Stencil = 0.0f;
+
+  CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
   TIFF(mD3dDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &depthStencilDesc, D3D12_RESOURCE_STATE_COMMON, &optClear,
-                                           IID_PPV_ARGS(mDepthStencilBuffer.GetAddressOf())));
+                                           IID_PPV_ARGS(mRenderDepthBuffer.GetAddressOf())));
+  mRenderDepthBuffer->SetName(L"RenderDepthBuffer");
 
   // Create descriptor to mip level 0 of entire resource using the format of the resource.
   D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
@@ -262,12 +404,11 @@ void Graphics::OnResize(CheeseWindow* window)
   dsvDesc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
   dsvDesc.Format             = mDepthStencilFormat;
   dsvDesc.Texture2D.MipSlice = 0;
-  mD3dDevice->CreateDepthStencilView(mDepthStencilBuffer.Get(), &dsvDesc, DepthStencilView());
 
   // Transition the resource from its initial state to be used as a depth buffer.
-  CD3DX12_RESOURCE_BARRIER resBarrier =
-      CD3DX12_RESOURCE_BARRIER::Transition(mDepthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+  CD3DX12_RESOURCE_BARRIER resBarrier = CD3DX12_RESOURCE_BARRIER::Transition(mRenderDepthBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
   mCommandList->ResourceBarrier(1, &resBarrier);
+  mD3dDevice->CreateDepthStencilView(mRenderDepthBuffer.Get(), &dsvDesc, DepthStencilView());
 
   // Execute the resize commands.
   TIFF(mCommandList->Close());
@@ -277,8 +418,10 @@ void Graphics::OnResize(CheeseWindow* window)
   // Wait until resize is complete.
   FlushCommandQueue();
 
+  CreateFsr2Buffer(resolution);
+
   // Update the viewport transform to cover the client area.
-  ResizeViewprot(window->GetWidth(), window->GetHeight());
+  ResizeViewprot(resolution.RenderWidth, resolution.RenderHeight);
 }
 
 void Graphics::ResizeViewprot(uint32 width, uint32 height)

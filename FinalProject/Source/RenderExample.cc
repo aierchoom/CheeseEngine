@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 
+#include <d3d12sdklayers.h>
 #include <DirectXColors.h>
 #include <DirectXCollision.h>
 
@@ -15,6 +16,7 @@
 #include <Graphics/D3DUtil.h>
 #include <Graphics/RenderData.h>
 #include <Graphics/ShadowMap.h>
+#include <Graphics/Fsr2RenderModule.h>
 #include <Shader/Shader.h>
 #include <Shader/ShaderResource.h>
 #include <Model/ModelLoader.h>
@@ -30,6 +32,8 @@ const float Pi = 3.1415926f;
 
 class RenderExample : public CheeseApp
 {
+  Fsr2RenderModule m_Fsr2RenderModule;
+
  public:
   RenderExample() : mWindow(new CheeseWindow(1280, 720)), mGraphics(new Graphics()), mLight() {}
 
@@ -97,14 +101,13 @@ class RenderExample : public CheeseApp
   float mPhi    = XM_PIDIV4;
   float mRadius = 5.0f;
 
+  ResolutionInfo m_Resolution;
   XMMATRIX mPrevViewProjectionMatrix = Identity4Mat();
   XMFLOAT2 mPrevJitter;
 
   RenderData* mRenderData;
   RenderData* mSkyboxRenderData;
   PointLight mLight;
-
-  int mCurrentFrame = 0;
 
   bool mIsMovingMouse = false;
 };
@@ -122,7 +125,10 @@ bool RenderExample::Init()
   InputComponent::Get()->RegisterOnResize(*this, &RenderExample::OnResize);
 
   // Init graphics and Reset CommandList
-  mGraphics->Initialize(mWindow);
+  m_Resolution = UpdateResolution(mWindow->GetWidth(), mWindow->GetHeight(), 1.5);
+  mGraphics->Initialize(mWindow, m_Resolution);
+
+  m_Fsr2RenderModule.Init(mGraphics->mD3dDevice.Get(), m_Resolution);
 
   mShadowMap = std::make_unique<ShadowMap>(mGraphics->mD3dDevice.Get(), 2048, 2048);
 
@@ -132,9 +138,11 @@ bool RenderExample::Init()
 void RenderExample::OnResize(uint32 width, uint32 height)
 {
   mWindow->ReSize(width, height);
-  mGraphics->OnResize(mWindow);
+  m_Resolution = UpdateResolution(width, height);
+  mGraphics->OnResize(m_Resolution);
+  m_Fsr2RenderModule.OnResize(m_Resolution);
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
-  mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
+  mCamera.SetViewPort(0.0f, 0.0f, (float)m_Resolution.RenderWidth, (float)m_Resolution.RenderHeight);
 
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetLocalToWorldMatrixXM()));
 }
@@ -172,9 +180,8 @@ bool RenderExample::Load()
 
   IMesh* skyboxMesh = Geometry::GenerateBox(1, 1, 1);
   Material skyboxMat;
-  TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(),
-                                       CTEXT("Resource/Texture/grasscube1024.dds"), skyboxMat.Textures[CTEXT("gCubeMap")],
-                                       D3D12_SRV_DIMENSION_TEXTURECUBE));
+  TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Texture/grasscube1024.dds"),
+                                       skyboxMat.Textures[CTEXT("gCubeMap")], D3D12_SRV_DIMENSION_TEXTURECUBE));
   skyboxMesh->SetMaterial(skyboxMat);
   Model* skybox = new Model();
   skybox->AddMesh(skyboxMesh);
@@ -182,14 +189,12 @@ bool RenderExample::Load()
   mSkyboxRenderData->BuildRenderData();
 
   XMMATRIX world = XMLoadFloat4x4(&Identity4x4());
-  mSkyboxRenderData->GetItem(CTEXT("Skybox"))
-      .GetPerObjectCBuffer(mSkyboxShader->GetName())
-      .SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
+  mSkyboxRenderData->GetItem(CTEXT("Skybox")).GetPerObjectCBuffer(mSkyboxShader->GetName()).SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(world));
 
   IMesh* planeMesh = Geometry::GeneratePlane(5.0f, 5.0f);
   Material planeMaterial;
-  TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Texture/tile.dds"),
-                                       planeMaterial.Textures[CTEXT("gAlbedoMap")]));
+  TIFF(
+      D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Texture/tile.dds"), planeMaterial.Textures[CTEXT("gAlbedoMap")]));
 
   TIFF(D3DUtil::CreateTexture2DFromDDS(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Texture/tile_nmap.dds"),
                                        planeMaterial.Textures[CTEXT("gNormalMap")]));
@@ -202,8 +207,7 @@ bool RenderExample::Load()
 
   Model* flightHelmet = new Model();
   Model* boomBox      = new Model();
-  ModelLoader::LoadGLTF(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Model/FlightHelmet/FlightHelmet.gltf"),
-                        *flightHelmet);
+  ModelLoader::LoadGLTF(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Model/FlightHelmet/FlightHelmet.gltf"), *flightHelmet);
   ModelLoader::LoadGLTF(mGraphics->mD3dDevice.Get(), mGraphics->mCommandList.Get(), CTEXT("Resource/Model/BoomBox/BoomBox.gltf"), *boomBox);
 
   mRenderData->AddRenderItem(CTEXT("FlightHelmet"), flightHelmet);
@@ -233,12 +237,8 @@ bool RenderExample::Load()
   mRenderData->GetItem(CTEXT("FlightHelmet")).SetScale(1.5f, 1.5f, 1.5f);
   XMMATRIX trans = XMLoadFloat4x4(&Identity4x4());
 
-  mRenderData->GetItem(CTEXT("FlightHelmet"))
-      .GetPerObjectCBuffer(mPBRShader->GetName())
-      .SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(trans));
-  mRenderData->GetItem(CTEXT("FlightHelmet"))
-      .GetPerObjectCBuffer(mPBRShader->GetName())
-      .SetValue(CTEXT("cbPerObject.PrevWorldTransform"), XMMatrixTranspose(trans));
+  mRenderData->GetItem(CTEXT("FlightHelmet")).GetPerObjectCBuffer(mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.gWorld"), XMMatrixTranspose(trans));
+  mRenderData->GetItem(CTEXT("FlightHelmet")).GetPerObjectCBuffer(mPBRShader->GetName()).SetValue(CTEXT("cbPerObject.PrevWorldTransform"), XMMatrixTranspose(trans));
 
   mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
   mRenderData->SetCBValueWithItemTrans(CTEXT("FlightHelmet"), mPBRShader->GetName(), CTEXT("cbPerObject.PrevWorldTransform"));
@@ -266,7 +266,7 @@ bool RenderExample::Load()
 
   mCamera.LookAt(XMFLOAT3(0.0f, 2.0f, -5.0f), XMFLOAT3(0.0f, 0.0f, 0.0f));
   mCamera.SetFrustum(XM_PI / 3, mWindow->GetAspectRatio(), 0.5f, 1000.0f);
-  mCamera.SetViewPort(0.0f, 0.0f, (float)mWindow->GetWidth(), (float)mWindow->GetHeight());
+  mCamera.SetViewPort(0.0f, 0.0f, (float)m_Resolution.RenderWidth, (float)m_Resolution.RenderHeight);
 
   mPrevViewProjectionMatrix = mCamera.GetViewProjMatrixXM();
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjMatrixXM()));
@@ -280,47 +280,44 @@ bool RenderExample::Load()
 
 void RenderExample::Draw()
 {
-  // 清空执行命令内存分配器，并且绑定PSO
   TIFF(mGraphics->mDirectCmdListAlloc->Reset());
-  TIFF(mGraphics->mCommandList->Reset(mGraphics->mDirectCmdListAlloc.Get(), mPSOs[CTEXT("StandardPSO")].Get()));
+  TIFF(mGraphics->mCommandList->Reset(mGraphics->mDirectCmdListAlloc.Get(), nullptr));
 
   mGraphics->mCommandList->RSSetViewports(1, &mShadowMap->GetViewport());
   mGraphics->mCommandList->RSSetScissorRects(1, &mShadowMap->GetScissorRect());
 
-  // Change to DEPTH_WRITE.
-  mGraphics->mCommandList->ResourceBarrier(
-      1,
-      &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE));
-  mGraphics->mCommandList->ClearDepthStencilView(mShadowMap->GetDsv(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0,
-                                                 nullptr);
+  // Draw shadow map.
+  mGraphics->mCommandList->ResourceBarrier(1,
+                                           &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+  mGraphics->mCommandList->ClearDepthStencilView(mShadowMap->GetDsv(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
   mGraphics->mCommandList->OMSetRenderTargets(0, nullptr, false, &mShadowMap->GetDsv());
 
   mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("ShadowPSO")].Get());
   DrawRenderItem(*mRenderData, mShadowShader);
 
-  mGraphics->mCommandList->ResourceBarrier(
-      1,
-      &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));
+  mGraphics->mCommandList->ResourceBarrier(1,
+                                           &CD3DX12_RESOURCE_BARRIER::Transition(mShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ));
 
   mGraphics->mCommandList->RSSetViewports(1, &mGraphics->mScreenViewport);
   mGraphics->mCommandList->RSSetScissorRects(1, &mGraphics->mScissorRect);
 
-  CD3DX12_RESOURCE_BARRIER backBufferBarrier =
-      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-  mGraphics->mCommandList->ResourceBarrier(1, &backBufferBarrier);
+  // CD3DX12_RESOURCE_BARRIER backBufferBarrier =
+  //     CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  // mGraphics->mCommandList->ResourceBarrier(1, &backBufferBarrier);
 
   // Clear the back buffer and depth buffer.
-  mGraphics->mCommandList->ClearRenderTargetView(mGraphics->CurrentBackBufferView(), Colors::LightSteelBlue, 0, nullptr);
-  mGraphics->mCommandList->ClearRenderTargetView(mGraphics->MotionVectorBufferView(), Colors::Black, 0, nullptr);
-  mGraphics->mCommandList->ClearDepthStencilView(mGraphics->DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0,
-                                                 nullptr);
+  float clearColor[4] = {0, 0, 0, 0};
+  mGraphics->mCommandList->ClearRenderTargetView(mGraphics->RenderTargetBufferView(), clearColor, 0, nullptr);
+  mGraphics->mCommandList->ClearRenderTargetView(mGraphics->ColorTargetBufferView(), clearColor, 0, nullptr);
+  mGraphics->mCommandList->ClearRenderTargetView(mGraphics->MotionVectorBufferView(), clearColor, 0, nullptr);
+  mGraphics->mCommandList->ClearDepthStencilView(mGraphics->ColorDepthBufferView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
   // Specify the buffers we are going to render to.
-  D3D12_CPU_DESCRIPTOR_HANDLE currBackBufferView     = mGraphics->CurrentBackBufferView();
+  D3D12_CPU_DESCRIPTOR_HANDLE colorBufferView        = mGraphics->ColorTargetBufferView();
   D3D12_CPU_DESCRIPTOR_HANDLE motionVectorBufferView = mGraphics->MotionVectorBufferView();
-  D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView       = mGraphics->DepthStencilView();
-  D3D12_CPU_DESCRIPTOR_HANDLE rts[2]                 = {currBackBufferView, motionVectorBufferView};
-  mGraphics->mCommandList->OMSetRenderTargets(2, rts, false, &depthStencilView);
+  D3D12_CPU_DESCRIPTOR_HANDLE colorDepthBufferView   = mGraphics->ColorDepthBufferView();
+  D3D12_CPU_DESCRIPTOR_HANDLE rts[2]                 = {colorBufferView, motionVectorBufferView};
+  mGraphics->mCommandList->OMSetRenderTargets(2, rts, false, &colorDepthBufferView);
 
   mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("StandardPSO")].Get());
   DrawRenderItem(*mRenderData, mPBRShader);
@@ -331,21 +328,35 @@ void RenderExample::Draw()
   mGraphics->mCommandList->SetPipelineState(mPSOs[CTEXT("TransparentPSO")].Get());
   DrawRenderItem(*mRenderData, mPBRShader, true);
 
-  // Indicate a state tansition on the resource usage.
-  backBufferBarrier =
-      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-  mGraphics->mCommandList->ResourceBarrier(1, &backBufferBarrier);
+  m_Fsr2RenderModule.Execute(mTimer.DeltaTime(), mGraphics->mCommandList.Get(), mGraphics->RenderTargetBuffer(), mGraphics->ColorTargetBuffer(), mGraphics->ColorDepthBuffer(),
+                             mGraphics->MotionVectorBuffer(), mCamera);
 
-  mGraphics->ExecuteCommandList();
+  CD3DX12_RESOURCE_BARRIER copyBackBarrierBegin =
+      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_SOURCE);
+  mGraphics->mCommandList->ResourceBarrier(1, &copyBackBarrierBegin);
 
-  // swap the back and front buffers
-  TIFF(mGraphics->mSwapChain->Present(0, 0));
-  mGraphics->mCurrBackBuffer = (mGraphics->mCurrBackBuffer + 1) % mGraphics->SwapChainBufferCount;
+  CD3DX12_RESOURCE_BARRIER copyRenderTargetBegin =
+      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->RenderTargetBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
+  mGraphics->mCommandList->ResourceBarrier(1, &copyRenderTargetBegin);
+
+  mGraphics->mCommandList->CopyResource(mGraphics->CurrentBackBuffer(), mGraphics->RenderTargetBuffer());
+
+  CD3DX12_RESOURCE_BARRIER copyRenderTargetEnd =
+      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->RenderTargetBuffer(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  mGraphics->mCommandList->ResourceBarrier(1, &copyRenderTargetEnd);
+  CD3DX12_RESOURCE_BARRIER copyBackBarrierEnd =
+      CD3DX12_RESOURCE_BARRIER::Transition(mGraphics->CurrentBackBuffer(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT);
+  mGraphics->mCommandList->ResourceBarrier(1, &copyBackBarrierEnd);
 
   // Wait until frame commands are complete. This waiting is inefficient and is
   // done for simplicity. Later we will show show how to organize our rendering code
   // so we do not have to wait per frame.
+  mGraphics->ExecuteCommandList();
   mGraphics->FlushCommandQueue();
+
+  // swap the back and front buffers
+  TIFF(mGraphics->mSwapChain->Present(0, 0));
+  mGraphics->mCurrBackBuffer = (mGraphics->mCurrBackBuffer + 1) % mGraphics->SwapChainBufferCount;
 }
 
 void RenderExample::DrawRenderItem(RenderData& renderData, Shader* shader, bool drawBlend)
@@ -434,8 +445,6 @@ void RenderExample::Update(float dt)
   static float rotTime = 0.0f;
   rotTime += dt;
 
-  mCurrentFrame = mCurrentFrame + 1;
-
   float speed = 2.0f;
   if (InputComponent::Get()->GetKeyStatus(EKeyMap::KEY_W) == EKeyStatus::PRESSED) {
     mCamera.MoveForward(speed * dt);
@@ -490,30 +499,19 @@ void RenderExample::Update(float dt)
   mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.PrevWorldTransform"));
 
   auto bboxPos = mRenderData->GetItem(CTEXT("BoomBox")).GetPosition();
-  float scale  = 0.0005f;
-  bboxPos.y += sin(rotTime * scale);
+  float scale  = 0.5f;
+  bboxPos.y    = 1.5 + sin(rotTime * scale);
   mRenderData->GetItem(CTEXT("BoomBox")).SetPosition(bboxPos.x, bboxPos.y, bboxPos.z);
   mRenderData->SetCBValueWithItemTrans(CTEXT("BoomBox"), mPBRShader->GetName(), CTEXT("cbPerObject.gWorld"));
 
-  mPrevViewProjectionMatrix = mCamera.GetViewProjJitteredMatrixXM();
-  mPrevJitter               = mCamera.GetJitterValues();
-
   XMVECTOR Pos = {1, 1, 1, 1};
 
-  const int32_t jitterPhaseCount = ffxFsr2GetJitterPhaseCount(1280, 1920);
-
-  float jitterX = 0.0f;
-  float jitterY = 0.0f;
-
-  ffxFsr2GetJitterOffset(&jitterX, &jitterY, mCurrentFrame, jitterPhaseCount);
-  XMFLOAT2 jitter = {-2.f * jitterX / 1280, 2.f * jitterY / 720};
-  mCamera.SetJitterValues(jitter);
-  // mCamera.AddYaw(sin(rotTime * scale));
-
-  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevJitter"), mPrevJitter);
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.CurrJitter"), mCamera.GetJitterValues());
-  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevViewProjectionMatrix"), XMMatrixTranspose(mPrevViewProjectionMatrix));
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gViewProj"), XMMatrixTranspose(mCamera.GetViewProjJitteredMatrixXM()));
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevJitter"), mPrevJitter);
+  mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.PrevViewProjectionMatrix"), XMMatrixTranspose(mPrevViewProjectionMatrix));
+  mPrevViewProjectionMatrix = mCamera.GetViewProjJitteredMatrixXM();
+  mPrevJitter               = mCamera.GetJitterValues();
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gShadowTransform"), XMMatrixTranspose(shadowTransform));
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gLight"), mLight);
   mPBRShader->GetCBufferManager().SetValue(CTEXT("cbPass.gEyePosW"), mCamera.GetPostion());
@@ -526,19 +524,20 @@ void RenderExample::BuildPSO()
 {
   D3D12_GRAPHICS_PIPELINE_STATE_DESC standardPsoDesc;
   ZeroMemory(&standardPsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-  standardPsoDesc.InputLayout     = {Vertex::InputLayout.data(), (UINT)Vertex::InputLayout.size()};
-  standardPsoDesc.pRootSignature  = mPBRShader->GetRootSignature();
-  standardPsoDesc.VS              = {reinterpret_cast<BYTE*>(mPBRShader->GetVS()->GetBufferPointer()), mPBRShader->GetVS()->GetBufferSize()};
-  standardPsoDesc.PS              = {reinterpret_cast<BYTE*>(mPBRShader->GetPS()->GetBufferPointer()), mPBRShader->GetPS()->GetBufferSize()};
-  standardPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-  standardPsoDesc.BlendState      = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+  standardPsoDesc.InputLayout           = {Vertex::InputLayout.data(), (UINT)Vertex::InputLayout.size()};
+  standardPsoDesc.pRootSignature        = mPBRShader->GetRootSignature();
+  standardPsoDesc.VS                    = {reinterpret_cast<BYTE*>(mPBRShader->GetVS()->GetBufferPointer()), mPBRShader->GetVS()->GetBufferSize()};
+  standardPsoDesc.PS                    = {reinterpret_cast<BYTE*>(mPBRShader->GetPS()->GetBufferPointer()), mPBRShader->GetPS()->GetBufferSize()};
+  standardPsoDesc.RasterizerState       = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+  standardPsoDesc.BlendState            = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
   standardPsoDesc.DepthStencilState     = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
   standardPsoDesc.SampleMask            = UINT_MAX;
   standardPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-  standardPsoDesc.NumRenderTargets      = 1;
+  standardPsoDesc.NumRenderTargets      = 2;
   standardPsoDesc.RTVFormats[0]         = mGraphics->mBackBufferFormat;
-  standardPsoDesc.SampleDesc.Count      = mGraphics->m4xMsaaState ? 4 : 1;
-  standardPsoDesc.SampleDesc.Quality    = mGraphics->m4xMsaaState ? (mGraphics->m4xMsaaQuality - 1) : 0;
+  standardPsoDesc.RTVFormats[1]         = mGraphics->mMotionVectorFormat;
+  standardPsoDesc.SampleDesc.Count      = 1;
+  standardPsoDesc.SampleDesc.Quality    = 0;
   standardPsoDesc.DSVFormat             = mGraphics->mDepthStencilFormat;
   TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&standardPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("StandardPSO")])));
 
@@ -562,8 +561,9 @@ void RenderExample::BuildPSO()
   shadowPsoDesc.PS = {reinterpret_cast<BYTE*>(mShadowShader->GetPS()->GetBufferPointer()), mShadowShader->GetPS()->GetBufferSize()};
 
   // Shadow map pass does not have a render target.
-  shadowPsoDesc.RTVFormats[0]    = DXGI_FORMAT_UNKNOWN;
   shadowPsoDesc.NumRenderTargets = 0;
+  shadowPsoDesc.RTVFormats[0]    = DXGI_FORMAT_UNKNOWN;
+  shadowPsoDesc.RTVFormats[1]    = DXGI_FORMAT_UNKNOWN;
   TIFF(mGraphics->mD3dDevice->CreateGraphicsPipelineState(&shadowPsoDesc, IID_PPV_ARGS(&mPSOs[CTEXT("ShadowPSO")])));
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPsoDesc = standardPsoDesc;

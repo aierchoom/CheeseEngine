@@ -136,6 +136,8 @@ GBuffer PS(VertexOut pin)
                             (pin.CurPosition.xy / pin.CurPosition.w);
   output.MotionVectors = MotionVectors - cancelJitter;
 
+  //output.colors =  float4(output.MotionVectors * 10 , 0, 1);
+
   // Transform motion vectors from NDC space to UV space (+Y is top-down).
   output.MotionVectors *= float2(0.5f, -0.5f);
 

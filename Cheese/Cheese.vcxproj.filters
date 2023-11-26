@@ -106,6 +106,7 @@
       <Filter>Graphics</Filter>
     </ClCompile>
     <ClCompile Include="Source\Graphics\RenderData.cc" />
+    <ClCompile Include="Source\Graphics\Fsr2RenderModule.cc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\CheeseApp.h">
@@ -205,5 +206,6 @@
       <Filter>ThirdParty\tinygltf</Filter>
     </ClInclude>
     <ClInclude Include="Source\Graphics\RenderData.h" />
+    <ClInclude Include="Source\Graphics\Fsr2RenderModule.h" />
   </ItemGroup>
 </Project>

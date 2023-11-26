@@ -37,7 +37,7 @@ class ShadowMap
 
   uint32 mWidth       = 0;
   uint32 mHeight      = 0;
-  DXGI_FORMAT mFormat = DXGI_FORMAT_R24G8_TYPELESS;
+  DXGI_FORMAT mFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 
   ComPtr<ID3D12Resource> mShadowMap = nullptr;
   ComPtr<ID3D12DescriptorHeap> mDsvHeap;
